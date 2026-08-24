@@ -117,7 +117,8 @@ async function uninstallHarness(options: { withDriver?: boolean; runner?: Packag
     '        version: file:./node_modules/dsh-fixture-pkg',
     '',
   ].join('\n'))
-  writeFileSync(join(profileDir, 'pnpm-workspace.yaml'), 'packages: []\n')
+  // No pnpm-workspace.yaml here: the transaction's workspace-policy arm takes
+  // its null path (the with-workspace variant lives below).
   const patchPath = join(profileDir, 'cordis.patch.yml')
 
   const rows: MutableRow[] = []
@@ -181,6 +182,20 @@ describe('LifecycleEngine uninstall flow', () => {
       records: Array<{ packageName: string; entryIds: string[] }>
     }
     expect(pending.records[0]).toMatchObject({ packageName: 'dsh-fixture-pkg', entryIds: ['include:fixture'] })
+  }, 20_000)
+
+  it('uninstalls with a pnpm-workspace.yaml present (workspace-policy arm)', async () => {
+    const h = await uninstallHarness()
+    // The workspace twin: the policy file exists, so the transaction reads
+    // and restores it (the null arm is covered by the default harness).
+    writeFileSync(join(h.profileDir, 'pnpm-workspace.yaml'), 'packages: []\n')
+    h.rows.push({ id: 'include:fixture', options: { name: 'dsh-fixture-pkg' }, disabled: true })
+    const caps = h.engine.capabilities()
+    const cap = caps.entries.find(entry => entry.entryId === 'include:fixture')
+    expect(cap?.canUninstall).toBe(true)
+    const preview = h.engine.preview({ entryId: 'include:fixture', action: 'uninstall', expectedRevision: caps.revision })
+    const done = await settle(h.engine, h.engine.execute({ token: preview.token }).operationId)
+    expect(done.state).toBe('succeeded')
   }, 20_000)
 
   it('fails with TIMEOUT when disposal never happens and rolls back', async () => {

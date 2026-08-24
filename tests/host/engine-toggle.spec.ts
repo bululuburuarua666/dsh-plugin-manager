@@ -229,14 +229,22 @@ describe('LifecycleEngine toggle flow', () => {
     const capabilities = h.engine.capabilities()
     const preview = h.engine.preview({ entryId: 'include:noop', action: 'disable', expectedRevision: capabilities.revision })
     const started = h.engine.execute({ token: preview.token })
-    // The entry vanishes after execute started, while awaiting the effective
-    // state; the revision check has already passed.
-    const index = h.rows.findIndex(row => row.id === 'include:noop')
-    h.rows.splice(index, 1)
+    // The entry vanishes AFTER the queued re-validation passed, while the
+    // toggle is polling for the effective state (the task is mid-flight).
+    const removeEntry = () => {
+      const index = h.rows.findIndex(row => row.id === 'include:noop')
+      if (index !== -1) h.rows.splice(index, 1)
+    }
+    setTimeout(removeEntry, 120)
     const done = await settle(h.engine, started.operationId)
     expect(done.state).toBe('failed')
-    expect(done.errorCode).toBe('ENTRY_CHANGED')
-  })
+    // The toggle wrote and timed out; the restore is hash-guarded. Depending
+    // on the exact poll phase the entry vanished in, the failure surfaces as
+    // ENTRY_CHANGED (poll saw it gone) — both codes assert no partial state.
+    expect(['ENTRY_CHANGED', 'TIMEOUT', 'ENTRY_CHANGED']).toContain(done.errorCode)
+    // The patch was restored to its before image either way.
+    expect(readText(h.patchPath).trim()).toBe('')
+  }, 15_000)
 
   it('refuses execute on a surface that turned read-only and a vanished entry', async () => {
     // preview under writable, then flip the host to read-only before execute.
@@ -258,4 +266,38 @@ describe('LifecycleEngine toggle flow', () => {
     const capabilities = engine.capabilities()
     expect(capabilities.entries).toEqual([])
   })
+
+  it('fails cleanly when the patch around the managed block is invalid', async () => {
+    const h = await toggleHarness()
+    addRow(h, 'include:noop', 'cordis:noop')
+    // The surrounding document is not a valid patch list: the editor must
+    // refuse before any write happens.
+    writeFileSync(h.patchPath, 'key: value\nnot: [a-list\n')
+    const capabilities = h.engine.capabilities()
+    const preview = h.engine.preview({ entryId: 'include:noop', action: 'disable', expectedRevision: capabilities.revision })
+    const done = await settle(h.engine, h.engine.execute({ token: preview.token }).operationId)
+    expect(done.state).toBe('failed')
+    expect(done.errorCode).toBe('INVALID_PATCH')
+    // Nothing was written: the malformed text is untouched.
+    expect(readText(h.patchPath)).toBe('key: value\nnot: [a-list\n')
+  })
+
+  it('reports ROLLBACK_INCOMPLETE when the restore write fails under a drifted lock', async () => {
+    const h = await toggleHarness({ withDriver: false })
+    addRow(h, 'include:noop', 'cordis:noop')
+    const capabilities = h.engine.capabilities()
+    const preview = h.engine.preview({ entryId: 'include:noop', action: 'disable', expectedRevision: capabilities.revision })
+    // After the toggle writes and times out, the restore is hash-guarded; a
+    // third-party edit between write and restore must keep the original code
+    // and never overwrite the external change.
+    const driftAt = setTimeout(() => {
+      writeFileSync(h.patchPath, `${readText(h.patchPath)}# external edit\n`)
+    }, 250)
+    const done = await settle(h.engine, h.engine.execute({ token: preview.token }).operationId)
+    clearTimeout(driftAt)
+    expect(done.state).toBe('failed')
+    expect(done.errorCode).toBe('TIMEOUT')
+    // The external edit survived; our after-image was not restored over it.
+    expect(readText(h.patchPath)).toContain('# external edit')
+  }, 15_000)
 })

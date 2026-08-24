@@ -37,7 +37,14 @@ export declare class LifecycleEngine {
     constructor(loaderBaseUrl: string | undefined, host: EngineHost);
     /** The no-shell package runner uninstalls delegate to. */
     protected createPackageRunner(): PackageRunner;
-    /** Startup cleanup: drop settled pending-removal records and their rows. */
+    /**
+     * Startup cleanup: for each settled pending-removal record, remove its
+     * managed rows and then the record. Ordering is fail-closed throughout:
+     * the patch is re-read and re-parsed INSIDE the lock (an outside read
+     * could overwrite concurrent user edits), the pending records are only
+     * cleared after the patch write committed, and any parse or write failure
+     * keeps the records so the next startup can retry idempotently.
+     */
     startupCleanup(): Promise<void>;
     /** Capability snapshot of the active profile, rebuilt per call. */
     capabilities(): PluginLifecycleCapabilities;
@@ -47,7 +54,12 @@ export declare class LifecycleEngine {
     execute(request: PluginLifecycleExecuteRequest): PluginLifecycleExecuteResponse;
     /** Poll one operation's state. */
     operation(request: PluginLifecycleOperationRequest): PluginLifecycleOperationView;
-    /** Serialize mutations per profile directory, regardless of outcome. */
+    /**
+     * Serialize mutations per profile directory, regardless of outcome. The
+     * thunk only starts when the previous queued operation settled, so no two
+     * mutations on one profile can overlap; the queue entry is removed when it
+     * is again the tail.
+     */
     private enqueue;
     /** Effective Loader facts for every non-group entry. */
     private entryFacts;
