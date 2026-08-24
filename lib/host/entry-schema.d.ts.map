@@ -1,0 +1,1 @@
+{"version":3,"file":"entry-schema.d.ts","sourceRoot":"","sources":["../../src/host/entry-schema.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AACH,OAAO,KAAK,IAAI,MAAM,SAAS,CAAA;AAE/B,0EAA0E;AAC1E,MAAM,WAAW,UAAU;IACzB,QAAQ,CAAC,QAAQ,EAAE,MAAM,CAAA;CAC1B;AAED,mEAAmE;AACnE,wBAAgB,QAAQ,CAAC,KAAK,EAAE,OAAO,GAAG,KAAK,IAAI,UAAU,CAE5D;AAUD,0EAA0E;AAC1E,eAAO,MAAM,eAAe,aAAkC,CAAA"}
