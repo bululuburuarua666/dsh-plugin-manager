@@ -1,0 +1,50 @@
+{
+  "name": "@bululuburuarua666/dsh-plugin-manager",
+  "version": "0.1.0-alpha.1",
+  "description": "DSH Plugin Manager — plugin origin classification and lifecycle management (disable/enable/uninstall) for DeepSeek Harness. Community project; not affiliated with or endorsed by DeepSeek.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**",
+    "cordis.patch.yml",
+    "compatibility.json",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "README.md",
+    "README.zh.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "verify:pack": "node scripts/verify-pack.mjs"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "esbuild": "^0.27.0",
+    "react": "^19.2.0",
+    "typescript": "^5.9.3"
+  }
+}

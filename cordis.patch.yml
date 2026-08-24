@@ -1,0 +1,5 @@
+# Out-of-tree profile bundle for @bululuburuarua666/dsh-plugin-manager.
+# `dsh plugin add` composes this row into dsh.profile.bundles automatically.
+- insert:
+    - id: dsh-plugin-manager
+      name: '@bululuburuarua666/dsh-plugin-manager'
