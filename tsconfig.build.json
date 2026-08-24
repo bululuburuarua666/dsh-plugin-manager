@@ -2,13 +2,14 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
-    "allowImportingTsExtensions": false,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "types": ["node"],
     "outDir": "lib",
     "rootDir": "src",
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true,
-    "types": []
+    "sourceMap": true
   },
   "include": ["src/index.ts", "src/host/**/*.ts", "src/types/**/*.d.ts"]
 }
