@@ -139,6 +139,19 @@ describe('PluginLifecycleOperationStore', () => {
     expect(store.get(id)!.state).toBe('succeeded')
   })
 
+  it('tolerates an empty update object', () => {
+    const store = new PluginLifecycleOperationStore()
+    const id = store.create('disable')
+    store.update(id, {})
+    expect(store.get(id)).toMatchObject({ state: 'queued', action: 'disable' })
+  })
+
+  it('ignores updates for unknown operation ids', () => {
+    const store = new PluginLifecycleOperationStore()
+    expect(() => store.update('nope', { state: 'succeeded' })).not.toThrow()
+    expect(store.get('nope')).toBeNull()
+  })
+
   it('evicts the oldest operation beyond capacity', () => {
     const store = new PluginLifecycleOperationStore({ capacity: 2 })
     const first = store.create('disable')
