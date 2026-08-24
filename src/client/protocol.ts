@@ -5,7 +5,8 @@
  * distinct `UNAVAILABLE` family; domain failures pass the engine's codes
  * through untouched.
  */
-import { MANAGER_CHANNEL, PROTOCOL_VERSION } from '../host/channel-protocol.ts'
+import { MANAGER_CHANNEL } from '../host/channel-protocol.ts'
+import { PROTOCOL_VERSION } from '../host/protocol.ts'
 
 /** Result envelope mirrored on the wire. */
 export type ClientResult<T> =
