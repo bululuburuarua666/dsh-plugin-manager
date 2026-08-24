@@ -1,0 +1,313 @@
+{
+  "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+  "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+  "copyright": "bululuburuarua666",
+  "files": [
+    {
+      "path": "imported/client-ui-settings-plugin-inventory/package.json",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/client/ui-settings-plugin-inventory/package.json",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/client-ui-settings-plugin-inventory/src/client/index.ts",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/client/ui-settings-plugin-inventory/src/client/index.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/client-ui-settings-plugin-inventory/src/client/locales.ts",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/client/ui-settings-plugin-inventory/src/client/locales.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/client-ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.module.css",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/client/ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.module.css",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/client-ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.tsx",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/client/ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.tsx",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/client-ui-settings-plugin-inventory/tests/browser-plugin.client.spec.tsx",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/client/ui-settings-plugin-inventory/tests/browser-plugin.client.spec.tsx",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/client-ui-settings-plugin-inventory/tests/components.client.spec.tsx",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/client/ui-settings-plugin-inventory/tests/components.client.spec.tsx",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/package.json",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/host/plugin-inventory/package.json",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/README.md",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/host/plugin-inventory/README.md",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/README.zh.md",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/host/plugin-inventory/README.zh.md",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/src/card.ts",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/host/plugin-inventory/src/card.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/src/index.ts",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/host/plugin-inventory/src/index.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/src/install-source.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-inventory/src/install-source.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/src/origin.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-inventory/src/origin.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/src/types.ts",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/host/plugin-inventory/src/types.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/tests/card.spec.ts",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/host/plugin-inventory/tests/card.spec.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/tests/inventory.spec.ts",
+      "category": "modified-upstream",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "sourcePath": "packages/host/plugin-inventory/tests/inventory.spec.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-inventory/tests/origin.spec.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-inventory/tests/origin.spec.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/package.json",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/package.json",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/src/failure.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/src/failure.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/src/index.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/src/index.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/src/invariant.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/src/invariant.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/src/operation-store.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/src/operation-store.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/src/package-runner.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/src/package-runner.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/src/patch-editor.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/src/patch-editor.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/src/profile-evidence.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/src/profile-evidence.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/src/token-store.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/src/token-store.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/src/types.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/src/types.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/src/uninstall.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/src/uninstall.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/tests/package-runner.spec.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/tests/package-runner.spec.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/tests/patch-editor.spec.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/tests/patch-editor.spec.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/tests/profile-evidence.spec.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/tests/profile-evidence.spec.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/tests/service.spec.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/tests/service.spec.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    },
+    {
+      "path": "imported/host-plugin-lifecycle/tests/uninstall.spec.ts",
+      "category": "original",
+      "sourceCommit": "c25f5299eb79a42f15910ae27e1ac1413ea6a7b0+worktree",
+      "upstreamBase": null,
+      "sourcePath": "packages/host/plugin-lifecycle/tests/uninstall.spec.ts",
+      "copyright": "bululuburuarua666",
+      "license": "MIT"
+    }
+  ]
+}
