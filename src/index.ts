@@ -1,17 +1,29 @@
 /**
- * Host half (T01 skeleton): mounted by the profile Loader through this
- * package's cordis.patch.yml row. The full lifecycle engine and the
- * Connection RPC channel registration land in T02–T04; for now the plugin
- * only reports that it is alive.
+ * Host half: mounted by the profile Loader through this package's
+ * cordis.patch.yml row. T02 wires the inventory assembler onto the Loader
+ * roster; the Connection RPC channel registration lands in T04.
  */
-
-/** Minimal structural shape of the Host Cordis context (keep dependency-free). */
-interface HostContext {
-  readonly logger?: { info(message: string): void; warn(message: string): void }
-}
+import type { HostContext, LoaderEntry } from './host/cordis.ts'
+import { InventoryAssembler, type RosterEntry } from './host/inventory.ts'
 
 export default {
   apply(ctx: HostContext): void {
-    ctx.logger?.info('dsh-plugin-manager host half active (T01 skeleton)')
+    const assembler = new InventoryAssembler(ctx.loader?.ctx?.baseUrl)
+
+    /** Read the current non-group Loader roster in Loader order. */
+    const roster = (): RosterEntry[] => {
+      const rows: RosterEntry[] = []
+      for (const entry of ctx.loader.ctx.entries()) {
+        const options = entry.options as LoaderEntry['options']
+        if (options.group !== undefined && options.group !== null && options.group !== false) continue
+        rows.push({ entryId: entry.id, moduleName: options.name, disabled: entry.disabled })
+      }
+      return rows
+    }
+
+    // T04 replaces this direct exposure with the loopback RPC channel; kept
+    // as a health probe for T02–T03 isolation testing.
+    ctx.logger?.info(`dsh-plugin-manager host half active (${assembler.list(roster()).entries.length} roster entries)`)
+    ;(ctx as HostContext & { managerRoster?: unknown }).managerRoster = { roster, assembler }
   },
 }

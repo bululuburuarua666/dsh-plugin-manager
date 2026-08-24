@@ -1,16 +1,9 @@
 /**
- * Host half (T01 skeleton): mounted by the profile Loader through this
- * package's cordis.patch.yml row. The full lifecycle engine and the
- * Connection RPC channel registration land in T02–T04; for now the plugin
- * only reports that it is alive.
+ * Host half: mounted by the profile Loader through this package's
+ * cordis.patch.yml row. T02 wires the inventory assembler onto the Loader
+ * roster; the Connection RPC channel registration lands in T04.
  */
-/** Minimal structural shape of the Host Cordis context (keep dependency-free). */
-interface HostContext {
-    readonly logger?: {
-        info(message: string): void;
-        warn(message: string): void;
-    };
-}
+import type { HostContext } from './host/cordis.ts';
 declare const _default: {
     apply(ctx: HostContext): void;
 };
