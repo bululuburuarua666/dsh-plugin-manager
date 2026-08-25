@@ -1,13 +1,13 @@
 /**
- * Host half: mounts the manager over the official Connection RPC extension
- * surface. Registers the single `/dsh-plugin-manager` channel with loopback
- * authority (the Host trust fence executes before any handler code), wires
- * its four endpoints to the lifecycle engine plus the inventory assembler,
- * and runs the startup pending-removals cleanup.
+ * Host half: a real Cordis plugin. `loader` is a required injection (Cordis
+ * holds this plugin until the Loader exists); `connection` is awaited
+ * dynamically with `ctx.inject(['connection'], …)` so a Host without the
+ * Connection RPC surface still mounts the plugin (the tab reports
+ * unavailable instead of stranding the whole plugin).
+ *
+ * The single `/dsh-plugin-manager` channel is registered with loopback
+ * authority — the official Host trust fence runs before any handler code.
  */
-import { readFileSync, realpathSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { LifecycleEngine, type EngineHost } from './host/engine.ts'
 import { InventoryAssembler } from './host/inventory.ts'
 import {
@@ -19,46 +19,57 @@ import {
 } from './host/channel-protocol.ts'
 import { PROTOCOL_VERSION } from './host/protocol.ts'
 import { ManagerFailure } from './host/failure.ts'
-import type { HostContext, LoaderEntry } from './host/cordis.ts'
-import type { ManagerEntry } from './host/protocol.ts'
+import type { LoaderEntry } from './host/cordis.ts'
 
 export { MANAGER_CHANNEL, MANAGER_ENDPOINTS, PROTOCOL_VERSION }
 export type { ManagerEndpoint }
 
-/** Locate this package's own install-tree root (walk up to our package.json). */
-function managerTreeRoot(): string | null {
-  let dir = dirname(fileURLToPath(import.meta.url))
-  while (true) {
-    try {
-      const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as Record<string, unknown>
-      if (manifest.name === '@bululuburuarua666/dsh-plugin-manager') {
-        return dirname(dirname(realpathSync(dir)))
-      }
-    } catch {
-      // Keep walking towards the filesystem root.
+/** Structural shape of the real Cordis plugin context this plugin consumes. */
+interface PluginContext {
+  readonly loader: { readonly ctx: { readonly baseUrl: string | undefined; entries(): Iterable<LoaderEntry> } }
+  /** Dynamic dependency injection: runs the callback once `deps` are provided. */
+  inject(deps: readonly string[], callback: (ctx: PluginContext) => void | Promise<void>): unknown
+  readonly connection?: {
+    readonly rpc: {
+      handle(
+        channel: string,
+        handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<{ ok: boolean; value?: unknown; error?: { code: string; message?: string } }>,
+        options: { readonly authority: 'loopback' | 'trusted-host' },
+      ): () => Promise<void>
     }
-    const parent = dirname(dir)
-    /* v8 ignore next -- reaching the filesystem root means this package is uninstalled; a test cannot fabricate that state. */
-    if (parent === dir) return null
-    dir = parent
   }
+  readonly webServer?: { readonly host?: string }
+  readonly logger?: { info(message: string): void; warn(message: string): void }
+  /** Reversible-effect registration owned by the Cordis lifecycle. */
+  effect(fn: () => unknown, label?: string): unknown
 }
 
+/** Non-group roster rows shaped for the inventory assembler. */
+function rosterRows(iterable: Iterable<LoaderEntry>): Array<{ entryId: string; moduleName: string; disabled: boolean }> {
+  const rows: Array<{ entryId: string; moduleName: string; disabled: boolean }> = []
+  for (const entry of iterable) {
+    const options = entry.options as LoaderEntry['options']
+    if (options.group !== undefined && options.group !== null && options.group !== false) continue
+    rows.push({ entryId: entry.id, moduleName: options.name, disabled: entry.disabled })
+  }
+  return rows
+}
+
+/** The real Cordis plugin: required loader injection, dynamic connection. */
 export default {
-  apply(ctx: HostContext): void {
-    const loaderContext = ctx.loader?.ctx
-    const baseUrl = loaderContext?.baseUrl
-    const entries = (): Iterable<LoaderEntry> => loaderContext?.entries() ?? []
+  inject: ['loader'],
+  apply(ctx: PluginContext): void {
+    const loaderContext = ctx.loader.ctx
+    const baseUrl = loaderContext.baseUrl
+    const entries = (): Iterable<LoaderEntry> => loaderContext.entries()
     const persistence = (): 'writable' | 'read-only' => {
       // Same stance as the official lifecycle surface: an all-interfaces
       // webserver bind serves read-only clients.
-      const webServer = (ctx as HostContext & { webServer?: { host?: string } }).webServer
-      return webServer?.host === '0.0.0.0' ? 'read-only' : 'writable'
+      return ctx.webServer?.host === '0.0.0.0' ? 'read-only' : 'writable'
     }
     const host: EngineHost = {
       entries,
       persistence,
-      engineTreeRoot: managerTreeRoot(),
     }
     const engine = new LifecycleEngine(baseUrl, host)
     const inventory = new InventoryAssembler(baseUrl)
@@ -70,31 +81,35 @@ export default {
     })
     /* v8 ignore stop */
 
-    // The channel only exists when the official Connection RPC surface does.
-    const rpc = ctx.connection?.rpc
-    if (rpc === undefined) {
-      ctx.logger?.warn('dsh-plugin-manager: no Connection RPC surface on this Host; the tab will report unavailable')
-      return
-    }
-
-    const dispose = rpc.handle(
-      MANAGER_CHANNEL,
-      (endpoint, payload, signal) => managerHandler(engine, inventory, entries, endpoint, payload, signal),
-      { authority: 'loopback' },
-    )
-    // Register a disposal bridge on the plugin context if it offers effects.
-    const effectCtx = ctx as HostContext & { effect?: (fn: () => unknown, label?: string) => unknown }
-    if (typeof effectCtx.effect === 'function') {
-      effectCtx.effect(() => dispose, 'dsh-plugin-manager: rpc channel')
-    }
-    ctx.logger?.info('dsh-plugin-manager: channel /dsh-plugin-manager registered (loopback)')
+    // The connection service may arrive after this plugin mounts: the
+    // dynamic inject re-runs the registration whenever it (re)appears and
+    // Cordis disposes the previous registration when it leaves.
+    ctx.inject(['connection'], connectionCtx => {
+      const rpc = (connectionCtx as PluginContext).connection?.rpc
+      if (rpc === undefined) {
+        connectionCtx.logger?.warn('dsh-plugin-manager: connection service present without an rpc surface; tab reports unavailable')
+        return
+      }
+      const dispose = rpc.handle(
+        MANAGER_CHANNEL,
+        (endpoint, payload, signal) => managerHandler(engine, inventory, entries, endpoint, payload, signal),
+        { authority: 'loopback' },
+      )
+      // rpc.handle() already owns its route through the CALLER's effect
+      // lifecycle (the official implementation registers owner.effect
+      // internally), so no second effect bridge is needed here.
+      void dispose
+      connectionCtx.logger?.info('dsh-plugin-manager: channel /dsh-plugin-manager registered (loopback)')
+    })
   },
 }
 
 /**
  * One channel request: strict payload gate, endpoint dispatch, structured
  * errors. ManagerFailure codes pass through; anything else maps to INTERNAL
- * with a sanitized message.
+ * with a sanitized message. Read endpoints honor pre-flight abort; once
+ * `execute` acknowledges an operation, later caller cancellation only stops
+ * waiting — the transaction itself always runs to completion.
  */
 async function managerHandler(
   engine: LifecycleEngine,
@@ -104,10 +119,14 @@ async function managerHandler(
   payload: unknown,
   signal: AbortSignal,
 ): Promise<{ ok: boolean; value?: unknown; error?: { code: string; message?: string } }> {
-  void signal
   try {
-    if (payload !== null && typeof payload === 'object' && JSON.stringify(payload).length > REQUEST_BODY_MAX_BYTES) {
-      return { ok: false, error: { code: 'REQUEST_TOO_LARGE', message: 'request payload exceeds the channel limit' } }
+    // Size gate on the logical payload AFTER transport parsing, BEFORE zod
+    // and engine. Counted in UTF-8 bytes, not UTF-16 code units.
+    if (payload !== null && typeof payload === 'object') {
+      const serialized = JSON.stringify(payload)
+      if (Buffer.byteLength(serialized, 'utf8') > REQUEST_BODY_MAX_BYTES) {
+        return { ok: false, error: { code: 'REQUEST_TOO_LARGE', message: 'request payload exceeds the channel limit' } }
+      }
     }
     if (!(MANAGER_ENDPOINTS as readonly string[]).includes(endpoint)) {
       return { ok: false, error: { code: 'ENDPOINT_UNKNOWN', message: `unknown endpoint ${endpoint.slice(0, 64)}` } }
@@ -116,10 +135,15 @@ async function managerHandler(
     if (!request.ok) {
       return { ok: false, error: { code: request.code, message: request.message } }
     }
+    // Pre-flight abort for the read-only endpoints; execute deliberately
+    // does not check after acknowledgement.
+    if (signal.aborted && endpoint !== 'execute') {
+      return { ok: false, error: { code: 'CANCELLED', message: 'the request was cancelled before dispatch' } }
+    }
     switch (endpoint as ManagerEndpoint) {
       case 'capabilities': {
         const caps = engine.capabilities()
-        const roster = inventory.list([...rosterRows(entries())])
+        const roster = inventory.list(rosterRows(entries()))
         return {
           ok: true,
           value: {
@@ -140,6 +164,9 @@ async function managerHandler(
         return { ok: true, value: { protocolVersion: PROTOCOL_VERSION, ...value } }
       }
       case 'execute': {
+        // Acknowledgement point: once the token is consumed and the
+        // operation queued, the result is delivered by `operation` polling
+        // regardless of this call's later cancellation.
         const value = engine.execute({ token: request.value.token as string })
         return { ok: true, value: { protocolVersion: PROTOCOL_VERSION, ...value } }
       }
@@ -156,22 +183,11 @@ async function managerHandler(
   }
 }
 
-/** Non-group roster rows shaped for the inventory assembler. */
-function rosterRows(iterable: Iterable<LoaderEntry>): Array<{ entryId: string; moduleName: string; disabled: boolean }> {
-  const rows: Array<{ entryId: string; moduleName: string; disabled: boolean }> = []
-  for (const entry of iterable) {
-    const options = entry.options as LoaderEntry['options']
-    if (options.group !== undefined && options.group !== null && options.group !== false) continue
-    rows.push({ entryId: entry.id, moduleName: options.name, disabled: entry.disabled })
-  }
-  return rows
-}
-
 /** Merge origin/card rows with lifecycle capabilities by entryId. */
 function mergeEntries(
-  originRows: readonly ManagerEntry[],
+  originRows: readonly import('./host/protocol.ts').ManagerEntry[],
   capabilityRows: ReadonlyArray<{ entryId: string; canToggle: boolean; canUninstall: boolean; toggleBlockReason: string | null; uninstallBlockReason: string | null; packageName: string | null }>,
-): Array<ManagerEntry & { canToggle: boolean; canUninstall: boolean; toggleBlockReason: string | null; uninstallBlockReason: string | null; packageName: string | null }> {
+): Array<import('./host/protocol.ts').ManagerEntry & { canToggle: boolean; canUninstall: boolean; toggleBlockReason: string | null; uninstallBlockReason: string | null; packageName: string | null }> {
   const capabilityByEntry = new Map(capabilityRows.map(row => [row.entryId, row]))
   return originRows.map(row => ({
     ...row,

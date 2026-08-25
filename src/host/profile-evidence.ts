@@ -8,7 +8,6 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, realpathSync, type Dirent } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { load as parseYaml } from 'js-yaml'
 import { entryListSchema } from './entry-schema.ts'
 import type { PluginLifecycleBlockReason, PluginLifecycleEntryCapability } from './engine-types.ts'
@@ -115,29 +114,6 @@ export function isPathInside(candidate: string, root: string): boolean {
   return child === parent || child.startsWith(`${parent}/`)
 }
 
-/**
- * This package's own install-tree root: two levels above the real package
- * directory (`node_modules` in a published layout, `packages` in the
- * monorepo). Packages resolving under this root ship with the engine.
- */
-export function engineTreeRootOf(): string | null {
-  let dir = dirname(fileURLToPath(import.meta.url))
-  while (true) {
-    try {
-      const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as Record<string, unknown>
-      if (manifest.name === '@bululuburuarua666/dsh-plugin-manager') {
-        return dirname(dirname(realpathSync(dir)))
-      }
-    } catch {
-      // Keep walking towards the filesystem root.
-    }
-    const parent = dirname(dir)
-    /* v8 ignore next -- reaching the filesystem root means this package is uninstalled; a test cannot fabricate that. */
-    if (parent === dir) return null
-    dir = parent
-  }
-}
-
 /** Module names owned by manual insert rows inside the user patch text. */
 export function manualInsertNames(patchText: string): ReadonlySet<string> {
   const names = new Set<string>()
@@ -181,14 +157,15 @@ export interface EvidenceSession {
   readonly profileDir: string
   readonly manifest: ProfileManifestView
   readonly patchText: string
-  readonly engineTreeRoot: string | null
   readonly manualInsertNames: ReadonlySet<string>
   /**
-   * Shallow node_modules index: package name → package directory, profile
-   * root first (later roots never overwrite an earlier hit). Dot-entries like
-   * `.pnpm` are never entered.
+   * Shallow node_modules index: package name → located directory plus the
+   * root it resolved from. `profile` means the profile's own node_modules
+   * (an ordinary installed plugin); `engine` means the shared parent-level
+   * node_modules the engine itself ships from. Dot-entries like `.pnpm` are
+   * never entered; the profile root wins over the engine root.
    */
-  readonly packageIndex: ReadonlyMap<string, string>
+  readonly packageIndex: ReadonlyMap<string, { dir: string; root: 'profile' | 'engine' }>
   /** Fallback cache used only for direct dependencies missing from the index. */
   readonly packageDirCache: Map<string, string | null>
   readonly realpathCache: Map<string, string | null>
@@ -207,7 +184,7 @@ function isPackageDirEntry(entry: Dirent): boolean {
  * the pnpm virtual store is never traversed. The first root to claim a name
  * wins; later roots never overwrite.
  */
-function scanRootInto(root: string, index: Map<string, string>): void {
+function scanRootInto(root: string, rootTag: 'profile' | 'engine', index: Map<string, { dir: string; root: 'profile' | 'engine' }>): void {
   let entries: Dirent[]
   try {
     entries = readdirSync(root, { withFileTypes: true })
@@ -228,10 +205,10 @@ function scanRootInto(root: string, index: Map<string, string>): void {
         if (second.name.startsWith('.')) continue
         if (!isPackageDirEntry(second)) continue
         const name = `${first.name}/${second.name}`
-        if (!index.has(name)) index.set(name, join(root, first.name, second.name))
+        if (!index.has(name)) index.set(name, { dir: join(root, first.name, second.name), root: rootTag })
       }
     } else if (!index.has(first.name)) {
-      index.set(first.name, join(root, first.name))
+      index.set(first.name, { dir: join(root, first.name), root: rootTag })
     }
   }
 }
@@ -241,10 +218,10 @@ function scanRootInto(root: string, index: Map<string, string>): void {
  * card reader: the profile's own node_modules first, then the engine-level
  * parent directory's node_modules.
  */
-function buildPackageIndex(profileDir: string): Map<string, string> {
-  const index = new Map<string, string>()
-  scanRootInto(join(profileDir, 'node_modules'), index)
-  scanRootInto(join(dirname(profileDir), 'node_modules'), index)
+function buildPackageIndex(profileDir: string): Map<string, { dir: string; root: 'profile' | 'engine' }> {
+  const index = new Map<string, { dir: string; root: 'profile' | 'engine' }>()
+  scanRootInto(join(profileDir, 'node_modules'), 'profile', index)
+  scanRootInto(join(dirname(profileDir), 'node_modules'), 'engine', index)
   return index
 }
 
@@ -253,13 +230,11 @@ export function createEvidenceSession(
   profileDir: string,
   manifest: ProfileManifestView,
   patchText: string,
-  engineTreeRoot: string | null,
 ): EvidenceSession {
   return {
     profileDir,
     manifest,
     patchText,
-    engineTreeRoot,
     manualInsertNames: manualInsertNames(patchText),
     packageIndex: buildPackageIndex(profileDir),
     packageDirCache: new Map(),
@@ -300,15 +275,6 @@ function manifestNameOf(session: EvidenceSession, packageDir: string): string | 
   return name
 }
 
-/** Cached realpath within one evidence session. */
-function cachedRealpath(session: EvidenceSession, path: string): string | null {
-  const cached = session.realpathCache.get(path)
-  if (cached !== undefined) return cached
-  const resolved = realpathOrNull(path)
-  session.realpathCache.set(path, resolved)
-  return resolved
-}
-
 /** Assemble one entry's evidence from profile files and resolution facts. */
 export function buildEntryEvidence(
   facts: LifecycleEntryFacts,
@@ -320,7 +286,8 @@ export function buildEntryEvidence(
   // The shallow index answers every ordinary entry. Only a direct dependency
   // missing from the index may pay the bounded Node-resolution fallback;
   // non-direct entries never resolve through Node here.
-  let packageDir = packageName === null ? null : (context.packageIndex.get(packageName) ?? null)
+  const indexed = packageName === null ? undefined : context.packageIndex.get(packageName)
+  let packageDir = indexed?.dir ?? null
   if (packageDir === null && packageName !== null && isDirectDependency) {
     packageDir = cachedResolvePackageDir(context, packageName)
   }
@@ -329,10 +296,14 @@ export function buildEntryEvidence(
   if (packageDir !== null && packageName !== null && manifestNameOf(context, packageDir) !== packageName) {
     packageDir = null
   }
-  const realPackageDir = packageDir === null ? null : cachedRealpath(context, packageDir)
   const isTemplateBundle = isBundleMember && !isDirectDependency
-  const insideEngineTree = realPackageDir !== null && context.engineTreeRoot !== null
-    && isPathInside(realPackageDir, context.engineTreeRoot)
+  // Engine ownership comes from WHERE the package resolved, not from any
+  // install-path inference: a package found in the shared engine-level
+  // node_modules ships with the engine; one in the profile's own tree is an
+  // ordinary installed plugin. Fallback-resolved (unindexed) packages are
+  // never treated as engine-owned — uncertain locations fail closed to the
+  // other gates (direct-dependency, protected) instead.
+  const insideEngineTree = indexed !== undefined && indexed.root === 'engine' && packageDir !== null
   const isProtected = packageName !== null && PROTECTED_PACKAGES.includes(packageName)
   const isManualInsert = context.manualInsertNames.has(facts.moduleName)
   return {

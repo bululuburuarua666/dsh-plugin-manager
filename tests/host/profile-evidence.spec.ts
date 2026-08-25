@@ -1,13 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildEntryEvidence,
   capabilityOf,
   computeRevision,
   createEvidenceSession,
-  engineTreeRootOf,
   fileDigest,
   isPathInside,
   manualInsertNames,
@@ -103,13 +102,53 @@ describe('path helpers', () => {
     expect(isPathInside(`${dir}/child/`, `${dir}/`)).toBe(true)
   })
 
-  it('locates this package inside the engine tree', () => {
-    const root = engineTreeRootOf()
-    expect(root).not.toBeNull()
-    // Standalone layout: this package sits in a node_modules root (or the
-    // repo root during development); the monorepo /packages suffix no longer
-    // applies. The root must be an existing directory above this package.
-    expect(root!.length).toBeGreaterThan(0)
+  it('derives engine ownership from the index resolution root, not install-path inference', () => {
+    // file: topology: home/profiles/web with a package under the profile's
+    // own node_modules — an ordinary installed plugin, NOT engine-owned.
+    const home = fixture()
+    const profileDir = join(home, 'profiles', 'web')
+    const pkg = join(profileDir, 'node_modules', 'my-plugin')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'my-plugin' }))
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dependencies: { 'my-plugin': 'file:./node_modules/my-plugin' } }))
+    const session = createEvidenceSession(profileDir, readProfileManifestView(join(profileDir, 'package.json')), '')
+    expect(session.packageIndex.get('my-plugin')?.root).toBe('profile')
+    const evidence = buildEntryEvidence(facts({ moduleName: 'my-plugin' }), session)
+    expect(evidence.insideEngineTree).toBe(false)
+    expect(capabilityOf(evidence, 'writable').canUninstall).toBe(true)
+
+    // Shared-engine topology: the engine ships its node_modules one level
+    // above the profiles directory — dirname(profileDir)/node_modules. A
+    // package resolving there is engine-owned, uninstall denied.
+    const enginePkg = join(dirname(profileDir), 'node_modules', 'my-engine-plugin')
+    mkdirSync(enginePkg, { recursive: true })
+    writeFileSync(join(enginePkg, 'package.json'), JSON.stringify({ name: 'my-engine-plugin' }))
+    const session2 = createEvidenceSession(profileDir, { dependencies: new Set(), bundles: [] }, '')
+    expect(session2.packageIndex.get('my-engine-plugin')?.root).toBe('engine')
+    const evidence2 = buildEntryEvidence(facts({ moduleName: 'my-engine-plugin' }), session2)
+    expect(evidence2.insideEngineTree).toBe(true)
+    expect(capabilityOf(evidence2, 'writable').uninstallBlockReason).toBe('engine-owned')
+  })
+
+  it('keeps Git/pnpm-virtual-store installs uninstallable (profile root, symlinked)', () => {
+    // pnpm links registry-installed packages into profile/node_modules as
+    // junctions/symlinks pointing into the global store. The INDEX sees the
+    // link at the profile root → resolutionRoot 'profile' → NOT engine-owned,
+    // regardless of where the store physically lives.
+    const home = fixture()
+    const profileDir = join(home, 'profiles', 'web')
+    mkdirSync(join(profileDir, 'node_modules'), { recursive: true })
+    const storePkg = join(home, '.pnpm-store', 'git-plugin')
+    mkdirSync(storePkg, { recursive: true })
+    writeFileSync(join(storePkg, 'package.json'), JSON.stringify({ name: 'git-installed-plugin' }))
+    const linkPath = join(profileDir, 'node_modules', 'git-installed-plugin')
+    symlinkSync(storePkg, linkPath, process.platform === 'win32' ? 'junction' : 'dir')
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dependencies: { 'git-installed-plugin': 'github:user/repo#abc' } }))
+    const session = createEvidenceSession(profileDir, readProfileManifestView(join(profileDir, 'package.json')), '')
+    expect(session.packageIndex.get('git-installed-plugin')?.root).toBe('profile')
+    const evidence = buildEntryEvidence(facts({ moduleName: 'git-installed-plugin' }), session)
+    expect(evidence.insideEngineTree).toBe(false)
+    expect(capabilityOf(evidence, 'writable').canUninstall).toBe(true)
   })
 })
 
@@ -138,7 +177,6 @@ describe('entry evidence and capabilities', () => {
       dir,
       readProfileManifestView(join(dir, 'package.json')),
       '',
-      engineTreeRootOf(),
     )
   }
 
@@ -195,14 +233,16 @@ describe('entry evidence and capabilities', () => {
 
   it('marks engine-tree packages engine-owned', () => {
     const dir = fixture()
-    withPackage(dir, 'dsh-engine-pkg')
+    // Engine packages ship from dirname(profileDir)/node_modules.
+    const enginePkg = join(dirname(dir), 'node_modules', 'dsh-engine-pkg')
+    mkdirSync(enginePkg, { recursive: true })
+    writeFileSync(join(enginePkg, 'package.json'), JSON.stringify({ name: 'dsh-engine-pkg' }))
     const evidence = buildEntryEvidence(
       facts({ moduleName: 'dsh-engine-pkg' }),
       createEvidenceSession(
         dir,
         { dependencies: new Set(['dsh-engine-pkg']), bundles: [] },
         '',
-        dir,
       ),
     )
     expect(evidence.insideEngineTree).toBe(true)
@@ -254,8 +294,8 @@ describe('shallow package index (R02)', () => {
     writeFileSync(join(enginePkg, 'package.json'), JSON.stringify({ name: 'shared-pkg', description: 'engine' }))
     writeFileSync(join(profilePkg, 'package.json'), JSON.stringify({ name: 'shared-pkg', description: 'profile' }))
 
-    const session = createEvidenceSession(profileRoot, { dependencies: new Set(), bundles: [] }, '', null)
-    expect(session.packageIndex.get('shared-pkg')).toBe(profilePkg)
+    const session = createEvidenceSession(profileRoot, { dependencies: new Set(), bundles: [] }, '')
+    expect(session.packageIndex.get('shared-pkg')?.dir).toBe(profilePkg)
   })
 
   it('indexes scoped and unscoped packages but never descends into .pnpm', () => {
@@ -271,9 +311,9 @@ describe('shallow package index (R02)', () => {
     writeFileSync(join(plainPkg, 'package.json'), JSON.stringify({ name: 'plain-pkg' }))
     writeFileSync(join(pnpmNested, 'package.json'), JSON.stringify({ name: 'hidden-pkg' }))
 
-    const session = createEvidenceSession(profileRoot, { dependencies: new Set(), bundles: [] }, '', null)
-    expect(session.packageIndex.get('@scope/pkg')).toBe(scopePkg)
-    expect(session.packageIndex.get('plain-pkg')).toBe(plainPkg)
+    const session = createEvidenceSession(profileRoot, { dependencies: new Set(), bundles: [] }, '')
+    expect(session.packageIndex.get('@scope/pkg')?.dir).toBe(scopePkg)
+    expect(session.packageIndex.get('plain-pkg')?.dir).toBe(plainPkg)
     expect(session.packageIndex.has('hidden-pkg')).toBe(false)
   })
 

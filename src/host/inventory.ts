@@ -47,29 +47,6 @@ export function profileDirOf(baseUrl: string | undefined): string | null {
   }
 }
 
-/**
- * Locate this package's own install tree root: walk up from this module to
- * the package.json of @bululuburuarua666/dsh-plugin-manager, then two levels
- * above its real directory. Packages under this root ship with the engine.
- */
-function engineTreeRootOf(): string | null {
-  let dir = dirname(fileURLToPath(import.meta.url))
-  while (true) {
-    try {
-      const manifest: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-      if (typeof manifest === 'object' && manifest !== null
-        && (manifest as Record<string, unknown>).name === '@bululuburuarua666/dsh-plugin-manager') {
-        return dirname(dirname(realpathSync(dir)))
-      }
-    } catch {
-      // Keep walking towards the filesystem root.
-    }
-    const parent = dirname(dir)
-    if (parent === dir) return null
-    dir = parent
-  }
-}
-
 /** The fallback origin for entries whose resolution itself fails. */
 const FALLBACK_ORIGIN: PluginInventoryOrigin = {
   kind: 'opensource',
@@ -93,7 +70,6 @@ export class InventoryAssembler {
   private readonly installSources: ProfileInstallSourceReader
   private readonly profileDir: string | null
   private readonly localPluginsDir: string | null
-  private readonly engineTreeRoot = engineTreeRootOf()
 
   constructor(baseUrl: string | undefined) {
     this.cards = new PluginInventoryCardReader(baseUrl)
@@ -151,8 +127,7 @@ export class InventoryAssembler {
         packageDir: meta.located?.packageDir ?? null,
         realPackageDir: realDir,
         resolutionRoot: meta.located?.resolutionRoot ?? 'unknown',
-        insideEngineCheckout: realDir !== null && this.engineTreeRoot !== null
-          && isPathInside(realDir, this.engineTreeRoot),
+        insideEngineCheckout: meta.located?.resolutionRoot === 'engine',
         insideLocalPlugins: realDir !== null && this.localPluginsDir !== null
           && isPathInside(realDir, this.localPluginsDir),
         profileSpecifier: specifier,

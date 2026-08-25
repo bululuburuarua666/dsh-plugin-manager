@@ -19,8 +19,6 @@ export interface EngineHost {
     entries(): Iterable<LoaderEntry>;
     /** The persistence mode of this deployment. */
     persistence(): PluginLifecyclePersistence;
-    /** This package's install-tree root for engine-ownership evidence. */
-    engineTreeRoot: string | null;
     /** Override point for tests; defaults to the no-shell pnpm runner. */
     createPackageRunner?(): PackageRunner;
 }

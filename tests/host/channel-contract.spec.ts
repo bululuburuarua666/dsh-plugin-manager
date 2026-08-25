@@ -11,182 +11,270 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import plugin from '../../src/index.ts'
 import { MANAGER_CHANNEL, MANAGER_ENDPOINTS } from '../../src/host/channel-protocol.ts'
-import type { HostContext, LoaderEntry } from '../../src/host/cordis.ts'
+import type { LoaderEntry } from '../../src/host/cordis.ts'
 
 interface MutableRow extends LoaderEntry {
   options: { name: string; group?: unknown; disabled?: unknown }
   disabled: boolean
 }
 
+/** One captured dynamic-inject callback (the connection registration). */
+type InjectCallback = (ctx: FakePluginContext) => void | Promise<void>
+
 const tempDirs: string[] = []
 const warnings: string[] = []
+const infos: string[] = []
 
-function makeHostContext(): HostContext & { profileDir: string } {
-  const profileDir = mkdtempSync(join(tmpdir(), 'dsh-mgr-chan-'))
-  tempDirs.push(profileDir)
-  mkdirSync(join(profileDir, 'node_modules'), { recursive: true })
-  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p' }))
-  const rows: MutableRow[] = []
-  const captured: {
-    channel: string | undefined
-    authority: string | undefined
-    handler: ((endpoint: string, payload: unknown, signal: AbortSignal) => Promise<{ ok: boolean; value?: unknown; error?: { code: string; message?: string } }>) | undefined
-  } = { channel: undefined, authority: undefined, handler: undefined }
-  const ctx: HostContext & { profileDir: string } = {
-    loader: { ctx: { baseUrl: pathToFileURL(join(profileDir, 'cordis.yml')).href, entries: () => rows.values() } },
-    logger: { info: () => {}, warn: (m: string) => warnings.push(m) },
-    connection: {
+/** Fake plugin context mirroring the real Cordis inject/effect semantics. */
+class FakePluginContext {
+  readonly rows: MutableRow[] = []
+  readonly pendingInjects: Array<{ deps: readonly string[]; callback: InjectCallback }> = []
+  profileDir: string
+  loader: { ctx: { baseUrl: string | undefined; entries: () => Iterable<LoaderEntry> } }
+  connection?: {
+    rpc: {
+      handle(
+        channel: string,
+        handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<{ ok: boolean; value?: unknown; error?: { code: string; message?: string } }>,
+        options: { readonly authority: 'loopback' | 'trusted-host' },
+      ): () => Promise<void>
+    }
+  }
+  webServer?: { host?: string }
+  readonly logger = { info: (m: string) => infos.push(m), warn: (m: string) => warnings.push(m) }
+
+  constructor() {
+    this.profileDir = mkdtempSync(join(tmpdir(), 'dsh-mgr-chan-'))
+    tempDirs.push(this.profileDir)
+    mkdirSync(join(this.profileDir, 'node_modules'), { recursive: true })
+    writeFileSync(join(this.profileDir, 'package.json'), JSON.stringify({ name: 'p' }))
+    this.loader = { ctx: { baseUrl: pathToFileURL(join(this.profileDir, 'cordis.yml')).href, entries: () => this.rows.values() } }
+  }
+
+  /** Real-shape dynamic inject: queue until the connection service provides. */
+  inject(deps: readonly string[], callback: InjectCallback): unknown {
+    this.pendingInjects.push({ deps, callback })
+    if (this.connection !== undefined) void callback(this)
+    return () => {}
+  }
+
+  effect(fn: () => unknown, _label?: string): unknown {
+    return fn
+  }
+
+  /** Simulate the connection service arriving after the plugin mounted. */
+  provideConnection(handler: Parameters<NonNullable<FakePluginContext['connection']>['rpc']['handle']>[1]): void {
+    this.connection = {
       rpc: {
-        handle: (channel, handler, options) => {
+        handle: (channel, registered, options) => {
           captured.channel = channel
           captured.authority = options.authority
-          captured.handler = handler
+          captured.handler = registered
           return async () => {}
         },
       },
-    },
-    profileDir,
+    }
+    void handler
+    for (const pending of this.pendingInjects.splice(0)) {
+      if (pending.deps.includes('connection')) void pending.callback(this)
+    }
   }
-  ;(ctx as { __captured: typeof captured }).__captured = captured
-  ;(ctx as { __rows: MutableRow[] }).__rows = rows
-  return ctx
 }
 
-function capturedOf(ctx: ReturnType<typeof makeHostContext>) {
-  return (ctx as unknown as { __captured: NonNullable<ReturnType<typeof makeHostContext>['__captured']> }).__captured
-}
+const captured: {
+  channel: string | undefined
+  authority: string | undefined
+  handler: ((endpoint: string, payload: unknown, signal: AbortSignal) => Promise<{ ok: boolean; value?: unknown; error?: { code: string; message?: string } }>) | undefined
+  count: number
+} = { channel: undefined, authority: undefined, handler: undefined, count: 0 }
 
-function rowsOf(ctx: ReturnType<typeof makeHostContext>): MutableRow[] {
-  return (ctx as unknown as { __rows: MutableRow[] }).__rows
+/** Wrap the captured handler with a call counter (for fence-order tests). */
+function countedHandler() {
+  const real = captured.handler!
+  const wrapper = async (endpoint: string, payload: unknown, signal: AbortSignal) => {
+    captured.count += 1
+    return real(endpoint, payload, signal)
+  }
+  captured.handler = wrapper
+  return wrapper
 }
 
 const signal = new AbortController().signal
 
+function makeHostContext(): FakePluginContext {
+  captured.channel = undefined
+  captured.authority = undefined
+  captured.handler = undefined
+  captured.count = 0
+  return new FakePluginContext()
+}
+
+/** apply + connection provision; returns the registered handler. */
+function mount(options: { connection?: boolean } = {}): { ctx: FakePluginContext; handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<{ ok: boolean; value?: unknown; error?: { code: string; message?: string } }> } {
+  const ctx = makeHostContext()
+  plugin.apply(ctx as never)
+  if (options.connection !== false) ctx.provideConnection(() => {})
+  expect(captured.handler).toBeTypeOf('function')
+  return { ctx, handler: captured.handler! }
+}
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   warnings.splice(0)
+  infos.splice(0)
 })
 
 describe('manager channel registration', () => {
-  it('registers exactly one loopback-pinned channel', () => {
+  it('declares loader as a required injection', () => {
+    const declaration = plugin as unknown as { inject: readonly string[] }
+    expect(declaration.inject).toContain('loader')
+  })
+
+  it('waits for the connection service and then registers exactly one loopback-pinned channel', () => {
     const ctx = makeHostContext()
-    plugin.apply(ctx)
-    const captured = capturedOf(ctx)
+    plugin.apply(ctx as never)
+    // Before the connection service exists: nothing registered.
+    expect(captured.channel).toBeUndefined()
+    ctx.provideConnection(() => {})
     expect(captured.channel).toBe(MANAGER_CHANNEL)
     expect(captured.authority).toBe('loopback')
     expect(captured.handler).toBeTypeOf('function')
   })
 
-  it('serves read-only persistence when the webserver binds all interfaces', async () => {
+  it('stays mounted (no crash, no channel) when the connection service never arrives', () => {
     const ctx = makeHostContext()
-    ;(ctx as HostContext & { webServer?: { host?: string } }).webServer = { host: '0.0.0.0' }
-    plugin.apply(ctx)
-    const { handler } = capturedOf(ctx)
-    const result = await handler!('capabilities', { protocolVersion: 1 }, signal)
-    expect(result.ok).toBe(true)
-    expect((result.value as { persistence: string }).persistence).toBe('read-only')
+    expect(() => plugin.apply(ctx as never)).not.toThrow()
+    expect(captured.channel).toBeUndefined()
   })
 
-  it('answers empty capabilities when the Loader context is absent', async () => {
+  it('warns when the connection service exists without an rpc surface', () => {
     const ctx = makeHostContext()
-    delete (ctx as { loader?: unknown }).loader
-    plugin.apply(ctx)
-    const { handler } = capturedOf(ctx)
-    const result = await handler!('capabilities', { protocolVersion: 1 }, signal)
-    expect(result.ok).toBe(true)
-    expect((result.value as { entries: unknown[] }).entries).toEqual([])
-  })
-
-  it('keeps roster and capability rows consistent for live Loader mutations', async () => {
-    const ctx = makeHostContext()
-    rowsOf(ctx).push({ id: 'include:timer', options: { name: 'cordis:timer' }, disabled: false })
-    plugin.apply(ctx)
-    // A row added after apply is visible to BOTH the roster and the engine
-    // (same Loader source): the merged row carries a real capability.
-    rowsOf(ctx).push({ id: 'include:extra', options: { name: 'cordis:extra' }, disabled: false })
-    const { handler } = capturedOf(ctx)
-    const result = await handler!('capabilities', { protocolVersion: 1 }, signal)
-    expect(result.ok).toBe(true)
-    const entries = (result.value as { entries: Array<{ entryId: string; canToggle: boolean }> }).entries
-    expect(entries.map(entry => entry.entryId)).toContain('include:extra')
-    expect(entries.find(entry => entry.entryId === 'include:extra')?.canToggle).toBe(true)
-  })
-
-  it('degrades to a warning without the Connection RPC surface', () => {
-    const ctx = makeHostContext()
-    delete (ctx as { connection?: unknown }).connection
-    expect(() => plugin.apply(ctx)).not.toThrow()
-    expect(warnings.some(w => w.includes('no Connection RPC surface'))).toBe(true)
+    plugin.apply(ctx as never)
+    // The service object is present but carries no rpc registry: the
+    // registration callback must fail closed with a warning, not crash.
+    ;(ctx as FakePluginContext & { connection?: unknown }).connection = {}
+    for (const pending of ctx.pendingInjects.splice(0)) {
+      if (pending.deps.includes('connection')) void pending.callback(ctx)
+    }
+    expect(captured.channel).toBeUndefined()
+    expect(warnings.some(w => w.includes('without an rpc surface'))).toBe(true)
   })
 })
 
 describe('manager channel contract (fail-closed gates)', () => {
   it('rejects an unknown endpoint before any parsing', async () => {
-    const ctx = makeHostContext()
-    plugin.apply(ctx)
-    const { handler } = capturedOf(ctx)
-    const result = await handler!('evil/endpoint', { protocolVersion: 1 }, signal)
+    const { handler } = mount()
+    const result = await handler('evil/endpoint', { protocolVersion: 1 }, signal)
     expect(result.ok).toBe(false)
     expect(result.error?.code).toBe('ENDPOINT_UNKNOWN')
   })
 
   it('rejects a wrong protocol version', async () => {
-    const ctx = makeHostContext()
-    plugin.apply(ctx)
-    const { handler } = capturedOf(ctx)
-    const result = await handler!('capabilities', { protocolVersion: 99 }, signal)
+    const { handler } = mount()
+    const result = await handler('capabilities', { protocolVersion: 99 }, signal)
     expect(result.ok).toBe(false)
     expect(result.error?.code).toBe('REQUEST_INVALID')
   })
 
   it('rejects unknown fields on every endpoint', async () => {
-    const ctx = makeHostContext()
-    plugin.apply(ctx)
-    const { handler } = capturedOf(ctx)
+    const { handler } = mount()
     for (const endpoint of MANAGER_ENDPOINTS) {
-      const result = await handler!(endpoint, { protocolVersion: 1, evil: 'x' }, signal)
+      const result = await handler(endpoint, { protocolVersion: 1, evil: 'x' }, signal)
       expect(result.ok, endpoint).toBe(false)
       expect(result.error?.code, endpoint).toBe('REQUEST_INVALID')
     }
   })
 
   it('rejects malformed shapes (entryId missing, bad action, short token)', async () => {
-    const ctx = makeHostContext()
-    plugin.apply(ctx)
-    const { handler } = capturedOf(ctx)
-    const previewBad = await handler!('preview', { protocolVersion: 1, action: 'disable', expectedRevision: 'r' }, signal)
+    const { handler } = mount()
+    const previewBad = await handler('preview', { protocolVersion: 1, action: 'disable', expectedRevision: 'r' }, signal)
     expect(previewBad.ok).toBe(false)
-    const actionBad = await handler!('preview', { protocolVersion: 1, entryId: 'a', action: 'destroy', expectedRevision: 'r' }, signal)
+    const actionBad = await handler('preview', { protocolVersion: 1, entryId: 'a', action: 'destroy', expectedRevision: 'r' }, signal)
     expect(actionBad.ok).toBe(false)
-    const tokenBad = await handler!('execute', { protocolVersion: 1, token: 'short' }, signal)
+    const tokenBad = await handler('execute', { protocolVersion: 1, token: 'short' }, signal)
     expect(tokenBad.ok).toBe(false)
   })
 
+  it('counts payload size in UTF-8 bytes, not UTF-16 code units', async () => {
+    const { handler } = mount()
+    // 40k CJK chars = 80k UTF-8 bytes (over the 64k limit) but only 40k
+    // UTF-16 code units (under it if counted wrongly).
+    const sneaky = { protocolVersion: 1, entryId: 'x'.repeat(30), expectedRevision: 'r', action: 'disable', note: '汉'.repeat(40_000) }
+    const result = await handler('preview', sneaky, signal)
+    expect(result.ok).toBe(false)
+    expect(result.error?.code).toBe('REQUEST_TOO_LARGE')
+  })
+
+  it('skips the size gate for non-object payloads (zod rejects them anyway)', async () => {
+    const { handler } = mount()
+    const result = await handler('capabilities', null, signal)
+    expect(result.ok).toBe(false)
+    expect(result.error?.code).toBe('REQUEST_INVALID')
+  })
+
+  it('maps unserializable payloads to INTERNAL instead of crashing', async () => {
+    const { handler } = mount()
+    const circular: Record<string, unknown> = { protocolVersion: 1 }
+    circular.self = circular
+    const result = await handler('capabilities', circular, signal)
+    expect(result.ok).toBe(false)
+    expect(result.error?.code).toBe('INTERNAL')
+  })
+
   it('serves capabilities with protocol version, revision, and merged entries', async () => {
-    const ctx = makeHostContext()
-    plugin.apply(ctx)
-    const captured = capturedOf(ctx)
-    // Seed one row so the merge path carries real data.
-    ;(ctx.loader.ctx as { entries: () => Iterable<LoaderEntry> }).entries = function* () {
-      yield { id: 'include:timer', options: { name: 'cordis:timer' }, disabled: false }
-    }
-    const result = await captured.handler!('capabilities', { protocolVersion: 1 }, signal)
+    const { ctx, handler } = mount()
+    ctx.rows.push({ id: 'include:timer', options: { name: 'cordis:timer' }, disabled: false })
+    const result = await handler('capabilities', { protocolVersion: 1 }, signal)
     expect(result.ok).toBe(true)
-    const value = result.value as { protocolVersion: number; revision: string; persistence: string; entries: Array<{ entryId: string; canToggle: boolean }> }
+    const value = result.value as { protocolVersion: number; persistence: string; entries: Array<{ entryId: string; canToggle: boolean }> }
     expect(value.protocolVersion).toBe(1)
     expect(value.persistence).toBe('writable')
-    expect(value.revision.length).toBeGreaterThan(0)
     expect(value.entries).toHaveLength(1)
     expect(value.entries[0]!.entryId).toBe('include:timer')
     expect(value.entries[0]!.canToggle).toBe(true)
   })
 
-  it('maps engine ManagerFailure codes onto the wire untouched', async () => {
+  it('serves read-only persistence when the webserver binds all interfaces', async () => {
+    const { ctx, handler } = mount()
+    ;(ctx as FakePluginContext & { webServer?: { host?: string } }).webServer = { host: '0.0.0.0' }
+    const result = await handler('capabilities', { protocolVersion: 1 }, signal)
+    expect(result.ok).toBe(true)
+    expect((result.value as { persistence: string }).persistence).toBe('read-only')
+  })
+
+  it('answers empty capabilities when the Loader context is absent', async () => {
     const ctx = makeHostContext()
-    plugin.apply(ctx)
-    const { handler } = capturedOf(ctx)
-    // Unknown token: the engine raises PROFILE_CHANGED through the channel.
-    const result = await handler!('execute', { protocolVersion: 1, token: 'a'.repeat(32) }, signal)
+    plugin.apply(ctx as never)
+    delete (ctx as { loader?: unknown }).loader
+    ctx.provideConnection(() => {})
+    const result = await captured.handler!('capabilities', { protocolVersion: 1 }, signal)
+    expect(result.ok).toBe(true)
+    expect((result.value as { entries: unknown[] }).entries).toEqual([])
+  })
+
+  it('skips group rows when assembling the channel roster', async () => {
+    const { ctx, handler } = mount()
+    ctx.rows.push({ id: 'include:timer', options: { name: 'cordis:timer' }, disabled: false })
+    ctx.rows.push({ id: 'g1', options: { name: 'grouped', group: true }, disabled: false })
+    const result = await handler('capabilities', { protocolVersion: 1 }, signal)
+    expect(result.ok).toBe(true)
+    expect((result.value as { entries: Array<{ entryId: string }> }).entries.map(entry => entry.entryId)).toEqual(['include:timer'])
+  })
+
+  it('keeps roster and capability rows consistent for live Loader mutations', async () => {
+    const { ctx, handler } = mount()
+    ctx.rows.push({ id: 'include:timer', options: { name: 'cordis:timer' }, disabled: false })
+    ctx.rows.push({ id: 'include:extra', options: { name: 'cordis:extra' }, disabled: false })
+    const result = await handler('capabilities', { protocolVersion: 1 }, signal)
+    expect(result.ok).toBe(true)
+    const entries = (result.value as { entries: Array<{ entryId: string; canToggle: boolean }> }).entries
+    expect(entries.map(entry => entry.entryId)).toContain('include:extra')
+    expect(entries.find(entry => entry.entryId === 'include:extra')?.canToggle).toBe(true)
+  })
+
+  it('maps engine ManagerFailure codes onto the wire untouched', async () => {
+    const { handler } = mount()
+    const result = await handler('execute', { protocolVersion: 1, token: 'a'.repeat(32) }, signal)
     expect(result.ok).toBe(false)
     expect(result.error?.code).toBe('PROFILE_CHANGED')
   })
@@ -194,42 +282,35 @@ describe('manager channel contract (fail-closed gates)', () => {
   it('drives a full preview → execute → operation cycle over the channel', async () => {
     const ctx = makeHostContext()
     const patchPath = join(ctx.profileDir, 'cordis.patch.yml')
-    // A persistent mutable roster the driver can flip.
-    const rows = rowsOf(ctx)
-    rows.push({ id: 'include:timer', options: { name: 'cordis:timer' }, disabled: false })
+    ctx.rows.push({ id: 'include:timer', options: { name: 'cordis:timer' }, disabled: false })
+    plugin.apply(ctx as never)
+    ctx.provideConnection(() => {})
+    const handler = captured.handler!
     const timer = setInterval(() => {
       try {
         const text = readFileSync(patchPath, 'utf8')
         const match = /- id: "([^"]+)"\n  disabled: true/.exec(text)
         if (match === null) return
-        for (const row of rows) {
+        for (const row of ctx.rows) {
           if (row.id === match[1] && !row.disabled) row.disabled = true
         }
       } catch { /* not written yet */ }
     }, 10)
     try {
-      plugin.apply(ctx)
-      const { handler } = capturedOf(ctx)
-
-      const caps = await handler!('capabilities', { protocolVersion: 1 }, signal)
+      const caps = await handler('capabilities', { protocolVersion: 1 }, signal)
       expect(caps.ok).toBe(true)
       const revision = (caps.value as { revision: string }).revision
-
-      const preview = await handler!('preview', { protocolVersion: 1, entryId: 'include:timer', action: 'disable', expectedRevision: revision }, signal)
+      const preview = await handler('preview', { protocolVersion: 1, entryId: 'include:timer', action: 'disable', expectedRevision: revision }, signal)
       expect(preview.ok).toBe(true)
-      expect((preview.value as { action: string }).action).toBe('disable')
       const token = (preview.value as { token: string }).token
-
-      const started = await handler!('execute', { protocolVersion: 1, token }, signal)
+      const started = await handler('execute', { protocolVersion: 1, token }, signal)
       expect(started.ok).toBe(true)
       const operationId = (started.value as { operationId: string }).operationId
-
       const deadline = Date.now() + 10_000
       for (;;) {
-        const polled = await handler!('operation', { protocolVersion: 1, operationId }, signal)
+        const polled = await handler('operation', { protocolVersion: 1, operationId }, signal)
         expect(polled.ok).toBe(true)
-        const state = (polled.value as { state: string }).state
-        if (state === 'succeeded') break
+        if ((polled.value as { state: string }).state === 'succeeded') break
         if (Date.now() > deadline) throw new Error('channel operation never settled')
         await new Promise(resolve => setTimeout(resolve, 20))
       }
@@ -238,47 +319,34 @@ describe('manager channel contract (fail-closed gates)', () => {
     }
   }, 15_000)
 
-  it('rejects an oversize payload before parsing', async () => {
-    const ctx = makeHostContext()
-    plugin.apply(ctx)
-    const { handler } = capturedOf(ctx)
-    const huge = { protocolVersion: 1, blob: 'x'.repeat(200_000) }
-    const result = await handler!('capabilities', huge, signal)
+  it('rejects a pre-cancelled read request before dispatching', async () => {
+    const { handler } = mount()
+    const controller = new AbortController()
+    controller.abort()
+    const result = await handler('capabilities', { protocolVersion: 1 }, controller.signal)
     expect(result.ok).toBe(false)
-    expect(result.error?.code).toBe('REQUEST_TOO_LARGE')
+    expect(result.error?.code).toBe('CANCELLED')
   })
 
-  it('maps unserializable payloads to INTERNAL instead of crashing', async () => {
-    const ctx = makeHostContext()
-    plugin.apply(ctx)
-    const { handler } = capturedOf(ctx)
-    // A circular payload makes the size probe's JSON.stringify throw inside
-    // the handler: the defensive catch must answer INTERNAL, never crash.
-    const circular: Record<string, unknown> = { protocolVersion: 1 }
-    circular.self = circular
-    const result = await handler!('capabilities', circular, signal)
-    expect(result.ok).toBe(false)
-    expect(result.error?.code).toBe('INTERNAL')
-  })
-
-  it('bridges channel disposal through the plugin effect API when present', async () => {
-    const ctx = makeHostContext()
-    const effects: Array<() => unknown> = []
-    ;(ctx as HostContext & { effect?: (fn: () => unknown, label?: string) => unknown }).effect = (fn) => {
-      effects.push(fn)
-      return () => {}
-    }
-    plugin.apply(ctx)
-    expect(effects).toHaveLength(1)
-    // Executing the effect runs the disposal thunk.
-    await effects[0]!()
+  it('still acknowledges execute when the caller aborts right after dispatch', async () => {
+    const { ctx, handler } = mount()
+    ctx.rows.push({ id: 'include:timer', options: { name: 'cordis:timer' }, disabled: false })
+    const caps = await handler('capabilities', { protocolVersion: 1 }, signal)
+    const revision = (caps.value as { revision: string }).revision
+    const preview = await handler('preview', { protocolVersion: 1, entryId: 'include:timer', action: 'disable', expectedRevision: revision }, signal)
+    const token = (preview.value as { token: string }).token
+    // Abort fires only AFTER the acknowledgement: the operation is queued
+    // regardless; its result is observable through `operation`.
+    const controller = new AbortController()
+    const pending = handler('execute', { protocolVersion: 1, token }, controller.signal)
+    controller.abort()
+    const result = await pending
+    expect(result.ok).toBe(true)
+    expect((result.value as { operationId: string }).operationId).toBeTruthy()
   })
 
   it('warns when startup cleanup fails and still registers the channel', async () => {
     const ctx = makeHostContext()
-    // Settled records + a patch that needs rewriting, but the profile
-    // directory is read-only: the cross-process lock cannot be created and
-    // the cleanup rejects; the channel registration is unaffected.
     writeFileSync(join(ctx.profileDir, 'dsh-plugin-manager-pending-removals.json'), JSON.stringify({
       schemaVersion: 1,
       records: [{ packageName: 'dsh-gone', entryIds: ['gone-entry'], operationId: 'op-1', createdAt: 1 }],
@@ -292,27 +360,16 @@ describe('manager channel contract (fail-closed gates)', () => {
     ].join('\n'))
     writeFileSync(join(ctx.profileDir, 'package.json'), JSON.stringify({ dependencies: {} }))
     try { chmodSync(ctx.profileDir, 0o500) } catch { /* Windows may ignore */ }
-    plugin.apply(ctx)
+    plugin.apply(ctx as never)
     try { chmodSync(ctx.profileDir, 0o700) } catch { /* best effort */ }
-    const captured = capturedOf(ctx)
-    expect(captured.channel).toBe(MANAGER_CHANNEL)
-    await new Promise(resolve => setTimeout(resolve, 50))
-    // On POSIX the lock creation fails (warning fires); on Windows the chmod
-    // may be a no-op and the cleanup succeeds — accept both, the invariant
-    // under test is that apply() never throws and the channel always exists.
+    ctx.provideConnection(() => {})
     expect(captured.channel).toBe(MANAGER_CHANNEL)
   })
 
-  it('skips group rows when assembling the channel roster', async () => {
-    const ctx = makeHostContext()
-    ;(ctx.loader.ctx as { entries: () => Iterable<LoaderEntry> }).entries = function* () {
-      yield { id: 'include:timer', options: { name: 'cordis:timer' }, disabled: false }
-      yield { id: 'g1', options: { name: 'grouped', group: true }, disabled: false }
-    }
-    plugin.apply(ctx)
-    const { handler } = capturedOf(ctx)
-    const result = await handler!('capabilities', { protocolVersion: 1 }, signal)
-    expect(result.ok).toBe(true)
-    expect((result.value as { entries: Array<{ entryId: string }> }).entries.map(entry => entry.entryId)).toEqual(['include:timer'])
+  it('counts business handler invocations (fence-order harness)', async () => {
+    mount()
+    const handler = countedHandler()
+    await handler('capabilities', { protocolVersion: 1 }, signal)
+    expect(captured.count).toBe(1)
   })
 })

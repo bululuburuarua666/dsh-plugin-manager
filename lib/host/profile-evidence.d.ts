@@ -30,12 +30,6 @@ export declare function resolvePackageDir(profileDir: string, packageName: strin
 export declare function realpathOrNull(path: string): string | null;
 /** Separator-insensitive containment check (case-insensitive on Windows). */
 export declare function isPathInside(candidate: string, root: string): boolean;
-/**
- * This package's own install-tree root: two levels above the real package
- * directory (`node_modules` in a published layout, `packages` in the
- * monorepo). Packages resolving under this root ship with the engine.
- */
-export declare function engineTreeRootOf(): string | null;
 /** Module names owned by manual insert rows inside the user patch text. */
 export declare function manualInsertNames(patchText: string): ReadonlySet<string>;
 /** Per-entry evidence record feeding capability decisions. */
@@ -57,14 +51,18 @@ export interface EvidenceSession {
     readonly profileDir: string;
     readonly manifest: ProfileManifestView;
     readonly patchText: string;
-    readonly engineTreeRoot: string | null;
     readonly manualInsertNames: ReadonlySet<string>;
     /**
-     * Shallow node_modules index: package name → package directory, profile
-     * root first (later roots never overwrite an earlier hit). Dot-entries like
-     * `.pnpm` are never entered.
+     * Shallow node_modules index: package name → located directory plus the
+     * root it resolved from. `profile` means the profile's own node_modules
+     * (an ordinary installed plugin); `engine` means the shared parent-level
+     * node_modules the engine itself ships from. Dot-entries like `.pnpm` are
+     * never entered; the profile root wins over the engine root.
      */
-    readonly packageIndex: ReadonlyMap<string, string>;
+    readonly packageIndex: ReadonlyMap<string, {
+        dir: string;
+        root: 'profile' | 'engine';
+    }>;
     /** Fallback cache used only for direct dependencies missing from the index. */
     readonly packageDirCache: Map<string, string | null>;
     readonly realpathCache: Map<string, string | null>;
@@ -72,7 +70,7 @@ export interface EvidenceSession {
     readonly manifestNameCache: Map<string, string | null>;
 }
 /** Create the per-call session: patch parse, shallow index, and caches are shared. */
-export declare function createEvidenceSession(profileDir: string, manifest: ProfileManifestView, patchText: string, engineTreeRoot: string | null): EvidenceSession;
+export declare function createEvidenceSession(profileDir: string, manifest: ProfileManifestView, patchText: string): EvidenceSession;
 /** Assemble one entry's evidence from profile files and resolution facts. */
 export declare function buildEntryEvidence(facts: LifecycleEntryFacts, context: EvidenceSession): LifecycleEntryEvidence;
 /**

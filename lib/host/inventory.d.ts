@@ -24,7 +24,6 @@ export declare class InventoryAssembler {
     private readonly installSources;
     private readonly profileDir;
     private readonly localPluginsDir;
-    private readonly engineTreeRoot;
     constructor(baseUrl: string | undefined);
     /** Read the profile's origin override file; invalid files yield none. */
     private readOverrides;

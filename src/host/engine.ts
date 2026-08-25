@@ -100,8 +100,6 @@ export interface EngineHost {
   entries(): Iterable<LoaderEntry>
   /** The persistence mode of this deployment. */
   persistence(): PluginLifecyclePersistence
-  /** This package's install-tree root for engine-ownership evidence. */
-  engineTreeRoot: string | null
   /** Override point for tests; defaults to the no-shell pnpm runner. */
   createPackageRunner?(): PackageRunner
 }
@@ -356,7 +354,7 @@ export class LifecycleEngine {
     const patchText = readPatchText(patchPath)
     const manifest = readProfileManifestView(manifestPath)
     const facts = this.entryFacts()
-    const session = createEvidenceSession(profileDir, manifest, patchText, this.host.engineTreeRoot)
+    const session = createEvidenceSession(profileDir, manifest, patchText)
     const entries = facts.map(fact => buildEntryEvidence(fact, session))
     const revision = computeRevision(profileName, {
       manifest: fileDigest(manifestPath),

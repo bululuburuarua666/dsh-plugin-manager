@@ -14,8 +14,8 @@ export default defineConfig({
         'src/host/operation-store.ts',
         'src/host/channel-protocol.ts',
         'src/index.ts',
+        'src/client/protocol.ts',
       ],
-      // src/client/** joins the gate in T05 with its browser tests.
       thresholds: {
         statements: 100,
         branches: 100,
