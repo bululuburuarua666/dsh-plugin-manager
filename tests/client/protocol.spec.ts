@@ -117,9 +117,27 @@ describe('client protocol — error layering', () => {
     expect(result).toMatchObject({ ok: false, code: 'UNAVAILABLE', message: 'transport failed' })
   })
 
-  it('maps an error envelope without a code to INTERNAL', async () => {
+  it('answers PROTOCOL_INVALID when the error envelope itself is malformed', async () => {
     const rpc = fakeRpc(async () => ({ ok: false, error: {} as { code: string } }))
     const result = await capabilities(rpc)
-    expect(result).toMatchObject({ ok: false, code: 'INTERNAL' })
+    expect(result).toMatchObject({ ok: false, code: 'PROTOCOL_INVALID' })
+  })
+
+  it('answers PROTOCOL_INVALID for unknown fields on the outer envelope', async () => {
+    const rpc = fakeRpc(async () => ({ ok: true, value: goodCapabilities, suspicious: 'extra' }) as never)
+    const result = await capabilities(rpc)
+    expect(result).toMatchObject({ ok: false, code: 'PROTOCOL_INVALID' })
+  })
+
+  it('answers PROTOCOL_INVALID for a primitive transport result', async () => {
+    const rpc = fakeRpc(async () => 42 as never)
+    const result = await capabilities(rpc)
+    expect(result).toMatchObject({ ok: false, code: 'PROTOCOL_INVALID' })
+  })
+
+  it('answers PROTOCOL_INVALID for unknown fields on a success value', async () => {
+    const rpc = fakeRpc(async () => ({ ok: true, value: { ...goodCapabilities, extra: 1 } }))
+    const result = await capabilities(rpc)
+    expect(result).toMatchObject({ ok: false, code: 'PROTOCOL_INVALID' })
   })
 })

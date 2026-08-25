@@ -43,6 +43,8 @@ export interface LifecycleEntryEvidence {
     readonly isBundleMember: boolean;
     readonly isTemplateBundle: boolean;
     readonly insideEngineTree: boolean;
+    /** Package resolved from a TRUSTED root (indexed profile/engine hit). */
+    readonly isResolvable: boolean;
     readonly isProtected: boolean;
     readonly isManualInsert: boolean;
 }

@@ -212,6 +212,35 @@ describe('manager channel contract (fail-closed gates)', () => {
     expect(result.error?.code).toBe('REQUEST_INVALID')
   })
 
+  it('rejects an oversize JSON primitive payload', async () => {
+    const { handler } = mount()
+    // A 100k-char string primitive: past the byte limit, not an object.
+    const result = await handler('capabilities', 'x'.repeat(100_000), signal)
+    expect(result.ok).toBe(false)
+    expect(result.error?.code).toBe('REQUEST_TOO_LARGE')
+  })
+
+  it('returns CANCELLED without consuming the token when execute enters pre-aborted', async () => {
+    const { ctx, handler } = mount()
+    ctx.rows.push({ id: 'include:timer', options: { name: 'cordis:timer' }, disabled: false })
+    const caps = await handler('capabilities', { protocolVersion: 1 }, signal)
+    const revision = (caps.value as { revision: string }).revision
+    const preview = await handler('preview', { protocolVersion: 1, entryId: 'include:timer', action: 'disable', expectedRevision: revision }, signal)
+    expect(preview.ok).toBe(true)
+    const token = (preview.value as { token: string }).token
+
+    // The caller cancels BEFORE dispatch: the one-use token must survive.
+    const controller = new AbortController()
+    controller.abort()
+    const cancelled = await handler('execute', { protocolVersion: 1, token }, controller.signal)
+    expect(cancelled).toMatchObject({ ok: false })
+    expect(cancelled.error?.code).toBe('CANCELLED')
+
+    // The token is still consumable afterwards (it was never spent).
+    const late = await handler('execute', { protocolVersion: 1, token }, signal)
+    expect(late.ok).toBe(true)
+  })
+
   it('maps unserializable payloads to INTERNAL instead of crashing', async () => {
     const { handler } = mount()
     const circular: Record<string, unknown> = { protocolVersion: 1 }

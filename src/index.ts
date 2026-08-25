@@ -92,7 +92,7 @@ export default {
       }
       const dispose = rpc.handle(
         MANAGER_CHANNEL,
-        (endpoint, payload, signal) => managerHandler(engine, inventory, entries, endpoint, payload, signal),
+        (endpoint, payload, signal) => managerHandler(engine, inventory, entries, endpoint, payload, signal, connectionCtx.logger),
         { authority: 'loopback' },
       )
       // rpc.handle() already owns its route through the CALLER's effect
@@ -118,13 +118,15 @@ async function managerHandler(
   endpoint: string,
   payload: unknown,
   signal: AbortSignal,
+  ctxLogger?: { warn(message: string): void },
 ): Promise<{ ok: boolean; value?: unknown; error?: { code: string; message?: string } }> {
   try {
     // Size gate on the logical payload AFTER transport parsing, BEFORE zod
-    // and engine. Counted in UTF-8 bytes, not UTF-16 code units.
-    if (payload !== null && typeof payload === 'object') {
+    // and engine. Counted in UTF-8 bytes across ALL serializable JSON values
+    // (objects AND primitives), not just objects.
+    if (payload !== undefined && (typeof payload !== 'function' && typeof payload !== 'symbol')) {
       const serialized = JSON.stringify(payload)
-      if (Buffer.byteLength(serialized, 'utf8') > REQUEST_BODY_MAX_BYTES) {
+      if (serialized !== undefined && Buffer.byteLength(serialized, 'utf8') > REQUEST_BODY_MAX_BYTES) {
         return { ok: false, error: { code: 'REQUEST_TOO_LARGE', message: 'request payload exceeds the channel limit' } }
       }
     }
@@ -135,9 +137,10 @@ async function managerHandler(
     if (!request.ok) {
       return { ok: false, error: { code: request.code, message: request.message } }
     }
-    // Pre-flight abort for the read-only endpoints; execute deliberately
-    // does not check after acknowledgement.
-    if (signal.aborted && endpoint !== 'execute') {
+    // A request that was cancelled BEFORE entering the handler answers
+    // CANCELLED on every endpoint; for execute this means the one-use token
+    // is never consumed.
+    if (signal.aborted) {
       return { ok: false, error: { code: 'CANCELLED', message: 'the request was cancelled before dispatch' } }
     }
     switch (endpoint as ManagerEndpoint) {
@@ -179,6 +182,9 @@ async function managerHandler(
     if (error instanceof ManagerFailure) {
       return { ok: false, error: { code: error.code, message: error.message } }
     }
+    // Diagnostic tag on the server log only: the error class name and the
+    // failing endpoint; never paths or raw payloads on the wire.
+    ctxLogger?.warn?.(`dsh-plugin-manager: ${endpoint} failed: ${error?.constructor?.name ?? typeof error}: ${String((error as Error | null)?.message ?? error).slice(0, 160)}`)
     return { ok: false, error: { code: 'INTERNAL', message: 'the operation failed unexpectedly' } }
   }
 }

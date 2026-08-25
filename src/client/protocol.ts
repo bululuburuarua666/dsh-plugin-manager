@@ -27,28 +27,45 @@ export interface ChannelCaller {
 }
 
 // ---------------------------------------------------------------------------
-// Strict response schemas: unknown fields are stripped, wrong shapes reject.
+// Strict wire contract: the OUTER envelope and each endpoint's SUCCESS value
+// are strict schemas — unknown fields and malformed shapes reject with
+// PROTOCOL_INVALID instead of being silently stripped.
 // ---------------------------------------------------------------------------
 
 const protocolVersionLiteral = z.literal(PROTOCOL_VERSION)
 
-const originSchema = z.object({
+/** Outer wire envelope: exactly one of success-with-value or error-with-code. */
+const wireResponseSchema = z.discriminatedUnion('ok', [
+  z.strictObject({
+    ok: z.literal(true),
+    value: z.unknown(),
+  }),
+  z.strictObject({
+    ok: z.literal(false),
+    error: z.strictObject({
+      code: z.string(),
+      message: z.string().optional(),
+    }),
+  }),
+])
+
+const originSchema = z.strictObject({
   kind: z.enum(['official', 'personal', 'opensource']),
   customized: z.boolean(),
   upstream: z.string().nullable(),
   fork: z.string().nullable(),
   branch: z.string().nullable(),
-  note: z.object({ zh: z.string(), en: z.string() }).nullable(),
+  note: z.strictObject({ zh: z.string(), en: z.string() }).nullable(),
   declaredBy: z.enum(['user-override', 'manifest', 'heuristic']),
 })
 
-const entrySchema = z.object({
+const entrySchema = z.strictObject({
   entryId: z.string(),
   moduleName: z.string(),
   enabled: z.boolean(),
   origin: originSchema,
-  title: z.object({ zh: z.string(), en: z.string() }).nullable(),
-  description: z.object({ zh: z.string(), en: z.string() }).nullable(),
+  title: z.strictObject({ zh: z.string(), en: z.string() }).nullable(),
+  description: z.strictObject({ zh: z.string(), en: z.string() }).nullable(),
   packageName: z.string().nullable(),
   canToggle: z.boolean(),
   canUninstall: z.boolean(),
@@ -56,15 +73,15 @@ const entrySchema = z.object({
   uninstallBlockReason: z.string().nullable(),
 })
 
-const capabilitiesSchema = z.object({
+const capabilitiesSchema = z.strictObject({
   protocolVersion: protocolVersionLiteral,
   revision: z.string().min(1),
   persistence: z.enum(['writable', 'read-only']),
   entries: z.array(entrySchema),
-  diagnostics: z.array(z.object({ code: z.string(), packageName: z.string().nullable() })).optional(),
+  diagnostics: z.array(z.strictObject({ code: z.string(), packageName: z.string().nullable() })).optional(),
 })
 
-const previewSchema = z.object({
+const previewSchema = z.strictObject({
   protocolVersion: protocolVersionLiteral,
   token: z.string().min(16),
   expiresAt: z.number(),
@@ -75,13 +92,13 @@ const previewSchema = z.object({
   restartRequired: z.boolean(),
 })
 
-const executeSchema = z.object({
+const executeSchema = z.strictObject({
   protocolVersion: protocolVersionLiteral,
   operationId: z.string().min(1),
   state: z.enum(['queued', 'running']),
 })
 
-const operationSchema = z.object({
+const operationSchema = z.strictObject({
   protocolVersion: protocolVersionLiteral,
   operationId: z.string(),
   state: z.enum(['queued', 'running', 'succeeded', 'failed', 'rollback-required']),
@@ -90,7 +107,7 @@ const operationSchema = z.object({
   restartRequired: z.boolean(),
 })
 
-/** One manager endpoint call: transport → error envelope → strict response parse. */
+/** One manager endpoint call: transport → strict envelope → strict value parse. */
 async function call<T>(
   rpc: ChannelCaller,
   endpoint: string,
@@ -98,16 +115,23 @@ async function call<T>(
   responseSchema: z.ZodType<T>,
   signal?: AbortSignal,
 ): Promise<ClientResult<T>> {
-  let response: { ok: boolean; value?: unknown; error?: { code: string; message?: string } }
+  let transportResult: unknown
   try {
-    response = await rpc.call(MANAGER_CHANNEL, endpoint, { protocolVersion: PROTOCOL_VERSION, ...payload }, signal)
+    transportResult = await rpc.call(MANAGER_CHANNEL, endpoint, { protocolVersion: PROTOCOL_VERSION, ...payload }, signal)
   } catch (error) {
     // Transport-level failure: the channel is absent, the Host predates the
     // Connection RPC surface, or the connection dropped mid-call.
     return { ok: false, code: 'UNAVAILABLE', message: error instanceof Error ? error.message.slice(0, 200) : 'transport failed' }
   }
+  // The outer envelope must be exactly {ok:true,value} or {ok:false,error}:
+  // null, primitives, missing fields, or unknown fields are all malformed.
+  const envelope = wireResponseSchema.safeParse(transportResult)
+  if (!envelope.success) {
+    return { ok: false, code: 'PROTOCOL_INVALID', message: `the ${endpoint} response envelope is malformed` }
+  }
+  const response = envelope.data
   if (!response.ok) {
-    return { ok: false, code: response.error?.code ?? 'INTERNAL', message: response.error?.message }
+    return { ok: false, code: response.error.code, message: response.error.message }
   }
   const raw = response.value as { protocolVersion?: number } | null | undefined
   if (raw !== null && typeof raw === 'object' && raw.protocolVersion !== undefined && raw.protocolVersion !== PROTOCOL_VERSION) {

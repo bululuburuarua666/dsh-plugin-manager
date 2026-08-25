@@ -148,6 +148,8 @@ export interface LifecycleEntryEvidence {
   readonly isBundleMember: boolean
   readonly isTemplateBundle: boolean
   readonly insideEngineTree: boolean
+  /** Package resolved from a TRUSTED root (indexed profile/engine hit). */
+  readonly isResolvable: boolean
   readonly isProtected: boolean
   readonly isManualInsert: boolean
 }
@@ -287,23 +289,31 @@ export function buildEntryEvidence(
   // missing from the index may pay the bounded Node-resolution fallback;
   // non-direct entries never resolve through Node here.
   const indexed = packageName === null ? undefined : context.packageIndex.get(packageName)
+  // Resolution root: 'profile' (the profile's own node_modules — an ordinary
+  // installed plugin), 'engine' (the shared parent-level node_modules), or
+  // 'unknown' (unindexed, resolved only through the Node fallback). The
+  // fallback exists so evidence stays complete; it NEVER authorizes an
+  // uninstall — an unknown root fails closed in capabilityOf.
+  const resolutionRoot: 'profile' | 'engine' | 'unknown' = indexed === undefined ? 'unknown' : indexed.root
   let packageDir = indexed?.dir ?? null
+  let rootIsTrusted = indexed !== undefined
   if (packageDir === null && packageName !== null && isDirectDependency) {
     packageDir = cachedResolvePackageDir(context, packageName)
+    rootIsTrusted = false
   }
   // A located directory that declares a different package name fails closed:
   // uninstall authorization requires an exact manifest-name match.
   if (packageDir !== null && packageName !== null && manifestNameOf(context, packageDir) !== packageName) {
     packageDir = null
+    rootIsTrusted = false
   }
   const isTemplateBundle = isBundleMember && !isDirectDependency
-  // Engine ownership comes from WHERE the package resolved, not from any
-  // install-path inference: a package found in the shared engine-level
-  // node_modules ships with the engine; one in the profile's own tree is an
-  // ordinary installed plugin. Fallback-resolved (unindexed) packages are
-  // never treated as engine-owned — uncertain locations fail closed to the
-  // other gates (direct-dependency, protected) instead.
-  const insideEngineTree = indexed !== undefined && indexed.root === 'engine' && packageDir !== null
+  // Engine ownership comes from WHERE the package resolved: only an indexed
+  // hit in the shared engine-level node_modules counts.
+  const insideEngineTree = rootIsTrusted && resolutionRoot === 'engine' && packageDir !== null
+  // Unknown-root resolutions are ambiguous for authorization: the capability
+  // layer treats them as never uninstallable.
+  const isResolvable = packageDir !== null && rootIsTrusted
   const isProtected = packageName !== null && PROTECTED_PACKAGES.includes(packageName)
   const isManualInsert = context.manualInsertNames.has(facts.moduleName)
   return {
@@ -316,6 +326,7 @@ export function buildEntryEvidence(
     isBundleMember,
     isTemplateBundle,
     insideEngineTree,
+    isResolvable,
     isProtected,
     isManualInsert,
   }
@@ -337,6 +348,10 @@ export function capabilityOf(
   else if (evidence.isProtected) uninstallBlockReason = 'protected-plugin'
   else if (evidence.insideEngineTree) uninstallBlockReason = 'engine-owned'
   else if (evidence.isTemplateBundle) uninstallBlockReason = 'template-bundle'
+  // Unknown-resolution-root or name-mismatched packages are ambiguous for
+  // authorization: never uninstallable even when a fallback resolve found
+  // their directory (fail closed).
+  else if (!evidence.isResolvable) uninstallBlockReason = 'ambiguous-package'
   else if (!evidence.isDirectDependency) uninstallBlockReason = 'not-direct-dependency'
   return {
     entryId: evidence.entryId,

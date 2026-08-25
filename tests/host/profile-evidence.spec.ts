@@ -150,6 +150,28 @@ describe('path helpers', () => {
     expect(evidence.insideEngineTree).toBe(false)
     expect(capabilityOf(evidence, 'writable').canUninstall).toBe(true)
   })
+
+  it('denies uninstall for an unindexed direct dependency even when the Node fallback finds it', () => {
+    // A direct dependency declared in the manifest but invisible to both
+    // shallow-index scans (hidden dot-directory). The bounded fallback may
+    // resolve its directory, but the resolution root is unknown →
+    // ambiguous-package, fail closed.
+    const home = fixture()
+    const profileDir = join(home, 'profiles', 'web')
+    mkdirSync(join(profileDir, 'node_modules'), { recursive: true })
+    const hidden = join(profileDir, 'node_modules', '.hidden-dep')
+    mkdirSync(hidden, { recursive: true })
+    writeFileSync(join(hidden, 'package.json'), JSON.stringify({ name: 'hidden-dep' }))
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dependencies: { 'hidden-dep': 'file:./node_modules/.hidden-dep' } }))
+    const session = createEvidenceSession(profileDir, readProfileManifestView(join(profileDir, 'package.json')), '')
+    expect(session.packageIndex.has('hidden-dep')).toBe(false)
+    const evidence = buildEntryEvidence(facts({ moduleName: 'hidden-dep' }), session)
+    // Whether or not the bounded fallback happens to resolve the directory,
+    // the untrusted root denies the uninstall (both not-direct and
+    // ambiguous are fail-closed outcomes).
+    expect(capabilityOf(evidence, 'writable').canUninstall).toBe(false)
+    expect(['ambiguous-package', 'not-direct-dependency']).toContain(capabilityOf(evidence, 'writable').uninstallBlockReason)
+  })
 })
 
 describe('manual insert detection', () => {
