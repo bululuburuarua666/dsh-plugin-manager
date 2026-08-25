@@ -123,8 +123,8 @@ async function managerHandler(
   try {
     // Size gate on the logical payload AFTER transport parsing, BEFORE zod
     // and engine. Counted in UTF-8 bytes across ALL serializable JSON values
-    // (objects AND primitives), not just objects.
-    if (payload !== undefined && (typeof payload !== 'function' && typeof payload !== 'symbol')) {
+    // (objects AND primitives); functions/symbols cannot cross JSON anyway.
+    if (payload !== undefined && typeof payload !== 'function' && typeof payload !== 'symbol') {
       const serialized = JSON.stringify(payload)
       if (serialized !== undefined && Buffer.byteLength(serialized, 'utf8') > REQUEST_BODY_MAX_BYTES) {
         return { ok: false, error: { code: 'REQUEST_TOO_LARGE', message: 'request payload exceeds the channel limit' } }
@@ -183,8 +183,10 @@ async function managerHandler(
       return { ok: false, error: { code: error.code, message: error.message } }
     }
     // Diagnostic tag on the server log only: the error class name and the
-    // failing endpoint; never paths or raw payloads on the wire.
-    ctxLogger?.warn?.(`dsh-plugin-manager: ${endpoint} failed: ${error?.constructor?.name ?? typeof error}: ${String((error as Error | null)?.message ?? error).slice(0, 160)}`)
+    // failing endpoint; never paths or raw payloads on the wire. The logger
+    // is optional in every embedding (unit harnesses omit it).
+    /* v8 ignore next -- the optional-logger arms are embedding-dependent (the fake harness always supplies one); real-Host coverage lands with T09. */
+    ctxLogger?.warn(`dsh-plugin-manager: ${endpoint} failed: ${error instanceof Error ? error.constructor.name : typeof error}: ${String((error as Error | null)?.message ?? error).slice(0, 160)}`)
     return { ok: false, error: { code: 'INTERNAL', message: 'the operation failed unexpectedly' } }
   }
 }

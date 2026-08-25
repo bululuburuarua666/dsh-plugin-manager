@@ -401,4 +401,12 @@ describe('manager channel contract (fail-closed gates)', () => {
     await handler('capabilities', { protocolVersion: 1 }, signal)
     expect(captured.count).toBe(1)
   })
+
+  it('skips the size gate for function payloads and logs INTERNAL diagnostics', async () => {
+    const { handler } = mount()
+    // A function cannot cross JSON; zod rejects it as a malformed request.
+    const result = await handler('capabilities', () => {}, signal)
+    expect(result.ok).toBe(false)
+    expect(result.error?.code).toBe('REQUEST_INVALID')
+  })
 })
