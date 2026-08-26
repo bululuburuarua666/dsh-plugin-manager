@@ -26,9 +26,15 @@ export type { ManagerEndpoint }
 
 /** Structural shape of the real Cordis plugin context this plugin consumes. */
 interface PluginContext {
-  readonly loader: { readonly ctx: { readonly baseUrl: string | undefined; entries(): Iterable<LoaderEntry> } }
+  readonly loader: { entries(): Iterable<LoaderEntry>; readonly ctx: { readonly baseUrl: string | undefined } }
   /** Dynamic dependency injection: runs the callback once `deps` are provided. */
   inject(deps: readonly string[], callback: (ctx: PluginContext) => void | Promise<void>): unknown
+  /**
+   * Inject-requirement-free service read (the official `ctx.get`): returns
+   * the live implementation or undefined without declaring a dependency.
+   * Real Cordis property access (`ctx.webServer`) throws without inject.
+   */
+  get(name: string): unknown
   readonly connection?: {
     readonly rpc: {
       handle(
@@ -38,7 +44,6 @@ interface PluginContext {
       ): () => Promise<void>
     }
   }
-  readonly webServer?: { readonly host?: string }
   readonly logger?: { info(message: string): void; warn(message: string): void }
   /** Reversible-effect registration owned by the Cordis lifecycle. */
   effect(fn: () => unknown, label?: string): unknown
@@ -61,11 +66,14 @@ export default {
   apply(ctx: PluginContext): void {
     const loaderContext = ctx.loader.ctx
     const baseUrl = loaderContext.baseUrl
-    const entries = (): Iterable<LoaderEntry> => loaderContext.entries()
+    const entries = (): Iterable<LoaderEntry> => ctx.loader?.entries() ?? []
     const persistence = (): 'writable' | 'read-only' => {
       // Same stance as the official lifecycle surface: an all-interfaces
-      // webserver bind serves read-only clients.
-      return ctx.webServer?.host === '0.0.0.0' ? 'read-only' : 'writable'
+      // webserver bind serves read-only clients. `get` reads the service
+      // store without declaring an inject requirement (undefined when the
+      // service is absent — a surface without a webserver stays writable).
+      const webServer = ctx.get('webServer') as { host?: string } | undefined
+      return webServer?.host === '0.0.0.0' ? 'read-only' : 'writable'
     }
     const host: EngineHost = {
       entries,

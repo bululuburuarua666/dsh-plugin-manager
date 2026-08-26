@@ -41,6 +41,9 @@ class FakePluginContext {
     }
   }
   webServer?: { host?: string }
+  get(name: string): unknown {
+    return name === 'webServer' ? this.webServer : undefined
+  }
   readonly logger = { info: (m: string) => infos.push(m), warn: (m: string) => warnings.push(m) }
 
   constructor() {
@@ -48,7 +51,7 @@ class FakePluginContext {
     tempDirs.push(this.profileDir)
     mkdirSync(join(this.profileDir, 'node_modules'), { recursive: true })
     writeFileSync(join(this.profileDir, 'package.json'), JSON.stringify({ name: 'p' }))
-    this.loader = { ctx: { baseUrl: pathToFileURL(join(this.profileDir, 'cordis.yml')).href, entries: () => this.rows.values() } }
+    this.loader = { entries: () => this.rows.values(), ctx: { baseUrl: pathToFileURL(join(this.profileDir, 'cordis.yml')).href } }
   }
 
   /** Real-shape dynamic inject: queue until the connection service provides. */
@@ -265,7 +268,7 @@ describe('manager channel contract (fail-closed gates)', () => {
 
   it('serves read-only persistence when the webserver binds all interfaces', async () => {
     const { ctx, handler } = mount()
-    ;(ctx as FakePluginContext & { webServer?: { host?: string } }).webServer = { host: '0.0.0.0' }
+    ctx.webServer = { host: '0.0.0.0' }
     const result = await handler('capabilities', { protocolVersion: 1 }, signal)
     expect(result.ok).toBe(true)
     expect((result.value as { persistence: string }).persistence).toBe('read-only')

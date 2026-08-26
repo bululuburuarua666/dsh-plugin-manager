@@ -6,13 +6,19 @@ export type { ManagerEndpoint };
 /** Structural shape of the real Cordis plugin context this plugin consumes. */
 interface PluginContext {
     readonly loader: {
+        entries(): Iterable<LoaderEntry>;
         readonly ctx: {
             readonly baseUrl: string | undefined;
-            entries(): Iterable<LoaderEntry>;
         };
     };
     /** Dynamic dependency injection: runs the callback once `deps` are provided. */
     inject(deps: readonly string[], callback: (ctx: PluginContext) => void | Promise<void>): unknown;
+    /**
+     * Inject-requirement-free service read (the official `ctx.get`): returns
+     * the live implementation or undefined without declaring a dependency.
+     * Real Cordis property access (`ctx.webServer`) throws without inject.
+     */
+    get(name: string): unknown;
     readonly connection?: {
         readonly rpc: {
             handle(channel: string, handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<{
@@ -26,9 +32,6 @@ interface PluginContext {
                 readonly authority: 'loopback' | 'trusted-host';
             }): () => Promise<void>;
         };
-    };
-    readonly webServer?: {
-        readonly host?: string;
     };
     readonly logger?: {
         info(message: string): void;
