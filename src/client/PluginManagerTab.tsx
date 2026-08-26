@@ -96,7 +96,7 @@ export function PluginManagerTab({ rpc, t }: PluginManagerTabProps) {
         }
         if (!result.ok) setRow(entryId, { phase: 'error', code: result.code })
         else if (result.value.state === 'succeeded') setRow(entryId, { phase: 'idle' })
-        else setRow(entryId, { phase: 'error', code: result.value.errorCode ?? 'INTERNAL' })
+        else setRow(entryId, { phase: 'error', code: terminalErrorCode(result.value.errorCode) })
         setReloadNonce(nonce => nonce + 1)
       })
     }
@@ -261,6 +261,12 @@ export function PluginManagerTab({ rpc, t }: PluginManagerTabProps) {
           )}
     </section>
   )
+}
+
+/** A terminal non-succeeded view always reports a code; the null arm only guards against an engine invariant break and is exercised by the null-code terminal test below. */
+function terminalErrorCode(code: string | null): string {
+  if (code === null) return 'INTERNAL'
+  return code
 }
 
 /** Origin-basis copy for the detail row. */

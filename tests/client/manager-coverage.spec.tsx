@@ -67,8 +67,8 @@ describe('PluginManagerTab remaining coverage arms', () => {
     render(<PluginManagerTab rpc={rpc} t={t} />)
     expect(await screen.findByRole('alert')).toBeTruthy()
     failing = false
-    fireEvent.click(screen.getByRole('button', { name: en.retry }))
-    await screen.findByText('插件X')
+    await waitFor(() => { fireEvent.click(screen.getByRole('button', { name: en.retry })) })
+    await screen.findByText('插件X', undefined, { timeout: 3_000 })
   })
 
   it('drives enable through the full cycle for a disabled row', async () => {
@@ -205,6 +205,41 @@ describe('PluginManagerTab remaining coverage arms', () => {
     await screen.findByText('插件X')
     fireEvent.click(screen.getByText('插件X'))
     expect(await screen.findByText(en.lifecycleUnavailable)).toBeTruthy()
+  })
+
+  it('covers customized badges, fork/branch/detail fields, and null-package confirm copy', async () => {
+    const rpc = fakeRpc(async endpoint => (endpoint === 'capabilities'
+      ? { ok: true, value: CAPS([baseEntry({
+          enabled: true,
+          packageName: null,
+          origin: { kind: 'opensource', customized: true, upstream: 'https://example.com/up', fork: 'https://example.com/fork', branch: 'dev', note: null, declaredBy: 'heuristic' },
+          description: { zh: '带描述', en: 'Has description' },
+        })]) }
+      : { ok: true, value: { protocolVersion: 1, token: 'n'.repeat(32), expiresAt: 2, action: 'uninstall', entryId: 'include:plugin-x', packageName: null, affectedEntryIds: ['include:plugin-x'], restartRequired: true } }))
+    render(<PluginManagerTab rpc={rpc} t={t} />)
+    await screen.findByText(en.sourceOpensourceCustomized)
+    fireEvent.click(screen.getByText(en.sourceOpensourceCustomized))
+    expect(await screen.findByText('https://example.com/fork')).toBeTruthy()
+    expect(screen.getByText('dev')).toBeTruthy()
+    expect(screen.getByText('带描述')).toBeTruthy()
+    fireEvent.click(document.querySelector('[data-lifecycle-action="uninstall"]') as HTMLButtonElement)
+    expect(await screen.findByText(en.lifecycleConfirmTitle)).toBeTruthy()
+    // The confirm copy falls back to the module name when packageName is null.
+    expect(screen.getByText(`${en.lifecyclePackage}: dsh-plugin-x`)).toBeTruthy()
+  })
+
+  it('normalizes a terminal operation with a null errorCode to INTERNAL copy', async () => {
+    const rpc = fakeRpc(async endpoint => {
+      if (endpoint === 'capabilities') return { ok: true, value: CAPS([baseEntry()]) }
+      if (endpoint === 'preview') return { ok: true, value: previewValue('enable') }
+      if (endpoint === 'execute') return { ok: true, value: { protocolVersion: 1, operationId: 'op-n', state: 'running' } }
+      return { ok: true, value: { protocolVersion: 1, operationId: 'op-n', state: 'failed', action: 'enable', errorCode: null, restartRequired: false } }
+    })
+    render(<PluginManagerTab rpc={rpc} t={t} />)
+    await screen.findByText('插件X')
+    fireEvent.click(screen.getByText('插件X'))
+    fireEvent.click(await waitFor(() => document.querySelector('[data-lifecycle-action="enable"]') as HTMLButtonElement))
+    expect(await screen.findByText(en.lifecycleErrorInternal)).toBeTruthy()
   })
 
   it('covers user-override and manifest origin bases plus row collapse', async () => {
