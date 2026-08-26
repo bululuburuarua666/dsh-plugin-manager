@@ -30,6 +30,8 @@ declare module '@deepseek-ai/dsh-client-runtime/client' {
   export interface ClientContext {
     readonly slots: SlotRegistry
     readonly locale: LocaleApi
+    /** Inject-requirement-free service read (undefined when unprovided). */
+    get(name: string): unknown
     readonly connection?: ClientConnectionHandle
     /** Register a reversible effect labeled for diagnostics. */
     effect(fn: () => unknown, label?: string): unknown

@@ -2,8 +2,11 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['tests/**/*.spec.ts'],
+    include: ['tests/**/*.spec.ts', 'tests/**/*.spec.tsx'],
     environment: 'node',
+    environmentMatchGlobs: [
+      ['tests/client/**', 'jsdom'],
+    ],
     coverage: {
       provider: 'v8',
       include: [
@@ -15,6 +18,7 @@ export default defineConfig({
         'src/host/channel-protocol.ts',
         'src/index.ts',
         'src/client/protocol.ts',
+        'src/client/PluginManagerTab.tsx',
       ],
       thresholds: {
         statements: 100,
