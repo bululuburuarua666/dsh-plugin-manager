@@ -23,7 +23,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "verify:pack": "node scripts/verify-pack.mjs"
+    "verify:pack": "node scripts/verify-pack.mjs",
+    "release:assets": "node scripts/create-release-assets.mjs dist 0.1.0-alpha.1",
+    "verify:assets": "node scripts/verify-release-assets.mjs dist 0.1.0-alpha.1"
   },
   "license": "MIT",
   "engines": {
