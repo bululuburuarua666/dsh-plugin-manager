@@ -27,6 +27,7 @@
     "verify:pack": "node scripts/verify-pack.mjs",
     "release:assets": "node scripts/create-release-assets.mjs dist",
     "verify:assets": "node scripts/verify-release-assets.mjs dist",
+    "verify:docs": "node scripts/verify-docs.mjs",
     "test:install": "node scripts/test-install.mjs"
   },
   "license": "MIT",

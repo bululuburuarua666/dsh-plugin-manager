@@ -54,6 +54,9 @@ jobs:
         run: |
           git diff --exit-code -- lib || (echo "::error::lib/ drifted from a clean rebuild — commit the rebuilt artifacts" && git diff --stat -- lib && exit 1)
 
+      - name: Documentation gates
+        run: pnpm run verify:docs
+
       - name: Pack + inspect the tarball
         shell: bash
         run: |
