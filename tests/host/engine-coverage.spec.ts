@@ -110,7 +110,7 @@ describe('LifecycleEngine remaining coverage arms', () => {
     const rows: MutableRow[] = [{ id: 'include:x', options: { name: 'cordis:noop' }, disabled: false }]
     const engine = makeEngine(profileDir, rows)
     const caps = engine.capabilities()
-    const preview = engine.preview({ entryId: 'include:x', action: 'disable', expectedRevision: caps.revision })
+    engine.preview({ entryId: 'include:x', action: 'disable', expectedRevision: caps.revision })
     // The row leaves without changing anything else the revision hashes —
     // entryFacts feed computeRevision, so removing the row DOES drift the
     // revision; use a forged token whose revision matches the post-removal

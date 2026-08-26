@@ -3,9 +3,6 @@
 // (manifest, cordis.patch.yml, lib halves, legal files) and must not leak
 // sources, tests, the imported/ staging area, or CI files.
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 
 const tarball = process.argv[2]
 if (!tarball) {

@@ -10,7 +10,7 @@
 // Windows 10+, Linux, and macOS. The SBOM joins at T10.
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

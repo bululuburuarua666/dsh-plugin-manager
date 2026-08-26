@@ -11,11 +11,11 @@
 //                                               assert no build scripts ran.
 // Both modes use an isolated DSH_HOME and a scratch port, never the user's
 // profile, and exit non-zero on the first failed assertion.
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')

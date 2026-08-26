@@ -67,17 +67,6 @@ function fakeRunner(calls: string[], profileDir: string): PackageRunner {
   }
 }
 
-/** A PackageRunner double whose remove fails after mutating. */
-function failingRemoveRunner(calls: string[]): PackageRunner {
-  return {
-    remove: async (packageName) => {
-      calls.push(`remove:${packageName}`)
-      throw Object.assign(new Error('pnpm failed'), { code: 'PACKAGE_MANAGER_FAILED' })
-    },
-    installFrozen: async () => { calls.push('install-frozen') },
-  }
-}
-
 /**
  * Uninstall harness: temp profile with a direct fixture dependency, fake
  * loader rows, and a recording runner. The patch driver applies managed

@@ -7,7 +7,6 @@ import { build } from 'esbuild'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const id = pkg.name

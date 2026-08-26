@@ -1,16 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { LifecycleEngine, blockReasonToCode, type EngineHost } from '../../src/host/engine.ts'
-import { readManagedToggleRows } from '../../src/host/patch-editor.ts'
 import { PluginLifecycleTokenStore } from '../../src/host/token-store.ts'
 import { PluginLifecycleOperationStore } from '../../src/host/operation-store.ts'
 import { lifecycleFailure } from '../../src/host/failure.ts'
-import { runPnpm } from '../../src/host/package-runner.ts'
 import type { LoaderEntry } from '../../src/host/cordis.ts'
-import type { PluginLifecycleOperationView } from '../../src/host/engine-types.ts'
 
 const tempDirs: string[] = []
 

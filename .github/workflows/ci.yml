@@ -1,0 +1,68 @@
+# Continuous integration: three platforms × two Node lines, full gate set.
+# Third-party actions are pinned to full commit SHAs (immutable refs).
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+
+      - name: Install Node ${{ matrix.node }}
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Unit tests + coverage gates
+        run: pnpm run test:coverage
+
+      - name: Build both halves
+        run: pnpm run build
+
+      - name: Committed lib is byte-reproducible
+        shell: bash
+        run: |
+          git diff --exit-code -- lib || (echo "::error::lib/ drifted from a clean rebuild — commit the rebuilt artifacts" && git diff --stat -- lib && exit 1)
+
+      - name: Pack + inspect the tarball
+        shell: bash
+        run: |
+          mkdir -p dist
+          pnpm pack --pack-destination dist
+          tgz=$(ls dist/*.tgz | head -n1)
+          node scripts/verify-pack.mjs "$tgz"
+
+      - name: Assemble + verify release assets
+        run: |
+          pnpm run release:assets
+          pnpm run verify:assets

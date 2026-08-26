@@ -4,3 +4,8 @@ coverage/
 *.log
 .vite/
 .DS_Store
+# never commit tsc leakage into src/
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+!src/types/*.d.ts

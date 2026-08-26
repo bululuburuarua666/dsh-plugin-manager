@@ -171,7 +171,7 @@ describe('PluginManagerTab lifecycle flows', () => {
 
   it('requires two-stage confirmation before uninstall executes', async () => {
     const calls: string[] = []
-    const rpc = fakeRpc(async (endpoint, payload) => {
+    const rpc = fakeRpc(async (endpoint, _payload) => {
       calls.push(endpoint)
       if (endpoint === 'capabilities') return { ok: true, value: CAPS }
       if (endpoint === 'preview') {

@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "pedantic": "warn"
+  },
+  "rules": {
+    "no-console": "error",
+    "typescript/no-non-null-assertion": "off",
+    "typescript/no-explicit-any": "error"
+  },
+  "overrides": [
+    {
+      "files": ["scripts/**"],
+      "rules": { "no-console": "off" }
+    }
+  ],
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "coverage/**",
+    "lib/**",
+    "imported/**"
+  ]
+}
