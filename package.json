@@ -30,7 +30,7 @@
     "verify:docs": "node scripts/verify-docs.mjs",
     "test:install": "node scripts/test-install.mjs",
     "test:stock": "node scripts/test-stock.mjs",
-    "test:stock:all": "node scripts/test-stock.mjs --deployment=source --install=tgz && node scripts/test-stock.mjs --deployment=source --install=git && (node scripts/test-stock.mjs --deployment=npm --install=tgz; node scripts/test-stock.mjs --deployment=npm --install=git; exit 0)"
+    "test:stock:all": "node scripts/test-stock.mjs --deployment=source --install=tgz && node scripts/test-stock.mjs --deployment=source --install=git && node scripts/test-stock.mjs --deployment=npm --install=tgz && node scripts/test-stock.mjs --deployment=npm --install=git"
   },
   "license": "MIT",
   "engines": {

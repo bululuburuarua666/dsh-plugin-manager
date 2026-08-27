@@ -1,14 +1,18 @@
 #!/usr/bin/env node
-// Stock-DSH end-to-end acceptance (the T09 quadrant runner, wired early as
-// the executable entry R08 demanded). Four quadrants:
+// Stock-DSH quadrant runner (T07.2, fail-closed):
 //   --deployment=npm|source --install=git|tgz
-// Emits machine-readable evidence JSON per quadrant to stdout AND
-// evidence/<deployment>-<install>.json; exits non-zero when any requested
-// quadrant fails or blocks without recording why.
 //
-// npm quadrants: BLOCKED on this machine until the official npm surface is
-// installable (dsh-web-app's dependency closure 404s on the registry); the
-// evidence records the exact failing package. That is a report, not a pass.
+// Both deployments install into the OFFICIAL `web` profile: `dsh plugin
+// --profile web add <spec>` initializes it from the built-in web template
+// (dsh-base + dsh-web-app), so no hand-written bundle links ever run. Boot
+// is `dsh web --port <p> --no-open`. Every quadrant installs FOR REAL; the
+// evidence JSON is written only from that quadrant's own checks, and green
+// is the conjunction of ALL required checks — any failure or block exits
+// non-zero.
+//
+// source deployment uses the local monorepo checkout (SOURCE_DSH);
+// npm deployment installs @deepseek-ai/dsh from the registry into an
+// isolated prefix (shared per process across calls via NPM_PREFIX).
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -33,128 +37,154 @@ for (let i = 2; i < process.argv.length; i += 1) {
 
 const PKG = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const TARBALL = `bululuburuarua666-dsh-plugin-manager-${PKG.version}.tgz`
+const REQUIRED_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@bululuburuarua666/dsh-plugin-manager']
 const stamp = new Date().toISOString()
-
-/** One quadrant's evidence record. */
-function evidence(status, checks, blockedReason = null) {
-  return {
-    quadrant: { deployment: args.deployment, install: args.install },
-    pluginVersion: PKG.version,
-    dsh: '0.1.1-rc.2 (b150a551b8d465e31e418e1b2eaf5e79bbb7d28e)',
-    status, // 'green' | 'blocked' | 'failed'
-    blockedReason,
-    checks, // [{ name, ok, detail }]
-    timestamp: stamp,
-  }
-}
 
 const checks = []
 const check = (name, ok, detail = '') => {
   checks.push({ name, ok, detail })
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail === '' ? '' : ` — ${detail}`}`)
-  return ok
+  if (!ok) finish('failed')
 }
 
 let home = null
-function cleanup() { if (home !== null) rmSync(home, { recursive: true, force: true }) }
-process.on('exit', cleanup)
-
-// ---------------------------------------------------------------------------
-// npm deployment: attempt the official installer; record the exact blocker.
-// ---------------------------------------------------------------------------
-if (args.deployment === 'npm') {
-  const temp = mkdtempSync(join(tmpdir(), `test-stock-npm-${args.install}-`))
-  home = temp
-  try {
-    execFileSync('cmd', ['/c', `set DSH_HOME=${temp}&& npm exec -y @deepseek-ai/dsh@0.1.1-rc.2 -- --profile sn --dump-config`], { encoding: 'utf8', timeout: 120_000, stdio: ['ignore', 'pipe', 'pipe'] })
-    check('official npm dsh bootstraps a profile', true)
-  } catch (error) {
-    const text = `${String(error.stdout ?? '')}\n${String(error.stderr ?? '')}`
-    const missing = /(\S+) (?:is not in the npm registry|Not Found - 404)/.exec(text)?.[1] ?? 'unknown package'
-    check('official npm dsh bootstraps a profile', false, `registry 404: ${missing}`)
-    const record = evidence('blocked', checks, `npm deployment blocked: ${missing} missing from the registry; the dsh-web-app closure cannot install`)
-    emit(record)
-    process.exit(1)
-  }
-  // Unreachable today on this machine; kept for when the registry heals.
-  const record = evidence('green', checks)
-  emit(record)
-  process.exit(0)
+let serverPid = null
+function killServer() {
+  if (serverPid === null) return
+  try { execFileSync('cmd', ['/c', `taskkill /F /T /PID ${serverPid} >nul 2>&1`]) } catch { /* gone */ }
+  serverPid = null
 }
+function finish(status, blockedReason = null) {
+  killServer()
+  const record = {
+    quadrant: { deployment: args.deployment, install: args.install },
+    pluginVersion: PKG.version,
+    dsh: '0.1.1-rc.2 (b150a551b8d465e31e418e1b2eaf5e79bbb7d28e)',
+    status,
+    blockedReason,
+    checks,
+    timestamp: stamp,
+  }
+  const dir = join(ROOT, 'evidence')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, `${record.quadrant.deployment}-${record.quadrant.install}.json`)
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, 'utf8')
+  console.log(`evidence → ${file} (status: ${status})`)
+  if (home !== null) { try { rmSync(home, { recursive: true, force: true }) } catch { /* best effort */ } }
+  process.exit(status === 'green' ? 0 : 1)
+}
+process.on('SIGINT', () => finish('failed', 'interrupted'))
 
-// ---------------------------------------------------------------------------
-// source deployment: the monorepo checkout, isolated DSH_HOME.
-// ---------------------------------------------------------------------------
-const temp = mkdtempSync(join(tmpdir(), `test-stock-source-${args.install}-`))
+const temp = mkdtempSync(join(tmpdir(), `stock-${args.deployment}-${args.install}-`))
 home = temp
 
-function dsh(...cli) {
-  return execFileSync('cmd', ['/c', `set DSH_HOME=${home}&& pnpm dsh ${cli.join(' ')}`], {
+// ---------------------------------------------------------------------------
+// Per-deployment DSH invocation.
+// ---------------------------------------------------------------------------
+let dsh
+if (args.deployment === 'source') {
+  dsh = (...cli) => execFileSync('cmd', ['/c', `set DSH_HOME=${home}&& pnpm dsh ${cli.join(' ')}`], {
     cwd: SOURCE_DSH, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
   })
+} else {
+  // npm deployment: install the official dsh once into an isolated prefix
+  // (a persistent %TEMP%\stock-npm-prefix is reused locally; CI reinstalls
+  // fresh). pnpm (invoked by dsh inside the profile) gets an ISOLATED
+  // store-dir: registering projects into the user's global store is EPERM
+  // under some sessions and would also pollute it.
+  const prefix = existsSync(join(process.env.TEMP ?? tmpdir(), 'stock-npm-prefix', 'dsh.cmd'))
+    ? join(process.env.TEMP ?? tmpdir(), 'stock-npm-prefix')
+    : join(temp, 'prefix')
+  if (!existsSync(join(prefix, 'dsh.cmd'))) {
+    console.log('npm deployment: installing @deepseek-ai/dsh@0.1.1-rc.2 (first run ~3min)…')
+    mkdirSync(prefix, { recursive: true })
+    execFileSync('cmd', ['/c', `set npm_config_prefix=${prefix}&& npm install -g @deepseek-ai/dsh@0.1.1-rc.2 --no-audit --no-fund --loglevel=error`], { encoding: 'utf8', timeout: 600_000, stdio: ['ignore', 'pipe', 'pipe'] })
+  }
+  check('S0 official npm dsh installed', existsSync(join(prefix, 'dsh.cmd')), `prefix ${prefix}`)
+  const dshCmd = join(prefix, 'dsh.cmd')
+  if (/\s/.test(dshCmd)) { finish('failed', `npm prefix path contains spaces (${dshCmd}) — cmd /c single-string quoting cannot carry it; choose a space-free TEMP`) }
+  const isolatedStore = join(home, 'pnpm-store')
+  dsh = (...cli) => execFileSync('cmd', ['/c', `set DSH_HOME=${home}&& set npm_config_store_dir=${isolatedStore}&& ${dshCmd} ${cli.join(' ')}`], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000,
+  })
+  args.npmPrefix = prefix
+  args.npmBootExtra = `set npm_config_store_dir=${isolatedStore}&& `
 }
 
+// ---------------------------------------------------------------------------
+// The install spec per quadrant — every quadrant installs FOR REAL.
+// ---------------------------------------------------------------------------
 let installSpec
 if (args.install === 'tgz') {
-  const dist = join(ROOT, 'dist')
-  if (!existsSync(join(dist, TARBALL))) {
-    emit(evidence('failed', checks, 'dist tarball missing — run release:assets first'))
-    process.exit(1)
-  }
-  installSpec = JSON.stringify(join(dist, TARBALL))
+  const tgz = join(ROOT, 'dist', TARBALL)
+  if (!existsSync(tgz)) finish('failed', 'dist tarball missing — run release:assets first')
+  installSpec = JSON.stringify(tgz)
 } else {
-  // git-local: stage the repo as a pinned git fixture (same shape as a
-  // GitHub SHA install), reusing test-install.mjs's approach inline.
-  const git = (...g) => execFileSync('git', g, { cwd: join(temp, 'repo'), encoding: 'utf8' })
-  mkdirSync(join(temp, 'repo'), { recursive: true })
-  mkdirSync(join(temp, 'repo', 'dist'), { recursive: true })
-  const copy = (from, to) => { try { writeFileSync(to, readFileSync(from)) } catch { mkdirSync(join(temp, 'repo', dirname(from).split(/[\\/]/).pop() ?? ''), { recursive: true }); execFileSync('cmd', ['/c', 'xcopy', '/e', '/i', '/y', from, to], { stdio: 'ignore' }) } }
-  for (const entry of ['package.json', 'cordis.patch.yml', 'compatibility.json', 'LICENSE', 'README.md', 'README.zh.md', 'THIRD_PARTY_NOTICES.md', 'lib']) copy(join(ROOT, entry), join(temp, 'repo', entry))
-  copy(join(ROOT, 'dist', TARBALL), join(temp, 'repo', 'dist', TARBALL))
+  // A pinned local git fixture (same shape as a GitHub 40-char SHA install).
+  const repo = join(temp, 'repo')
+  mkdirSync(join(repo, 'dist'), { recursive: true })
+  const git = (...g) => execFileSync('git', g, { cwd: repo, encoding: 'utf8' })
+  const copy = (from, to) => {
+    try { writeFileSync(to, readFileSync(from)) } catch {
+      mkdirSync(to, { recursive: true })
+      execFileSync('cmd', ['/c', 'xcopy', '/e', '/i', '/y', from, to], { stdio: 'ignore' })
+    }
+  }
+  for (const entry of ['package.json', 'cordis.patch.yml', 'compatibility.json', 'LICENSE', 'README.md', 'README.zh.md', 'THIRD_PARTY_NOTICES.md', 'lib']) copy(join(ROOT, entry), join(repo, entry))
+  copy(join(ROOT, 'dist', TARBALL), join(repo, 'dist', TARBALL))
   git('init', '-q'); git('config', 'user.email', 't@local'); git('config', 'user.name', 't'); git('config', 'core.autocrlf', 'false')
   git('add', '-A'); git('commit', '-qm', 'fixture')
   const sha = git('rev-parse', 'HEAD').trim()
-  installSpec = JSON.stringify(`git+file:///${join(temp, 'repo').replace(/\\/g, '/').replace(/^\//, '')}#${sha}`)
-  check('pinned git fixture committed at a full SHA', /^[0-9a-f]{40}$/.test(sha), sha.slice(0, 12))
+  check('git fixture at a full 40-char SHA', /^[0-9a-f]{40}$/.test(sha), sha.slice(0, 12))
+  installSpec = JSON.stringify(`git+file:///${repo.replace(/\\/g, '/').replace(/^\//, '')}#${sha}`)
 }
 
-// S1: one command installs the plugin into a clean profile.
-let addOut = ''
-try { addOut = dsh('plugin', '--profile', 's1', 'add', installSpec) } catch (error) {
-  check('S1 clean-profile install', false, String(error.message).slice(0, 140))
-  emit(evidence('failed', checks)); process.exit(1)
+// S8: the engine tree (source checkout) is untouched by THIS run — compare
+// git status before vs after (the user's fork workspace may carry its own
+// long-standing edits; only drift caused by the quadrant is a failure).
+let sourceBaseline = null
+if (args.deployment === 'source') {
+  sourceBaseline = execFileSync('git', ['status', '--porcelain'], { cwd: SOURCE_DSH, encoding: 'utf8' })
 }
-check('S1 clean-profile install', /Done in/.test(addOut))
 
-// A bootable profile needs the web surface: link the checkout's web-app
-// (fixture-only manifest shaping, recorded openly; S-row assertions below
-// run against this two-bundle profile).
-const manifestPath = join(home, 'profiles', 's1', 'package.json')
+// S1: REAL install into the official web profile (template auto-inits with
+// dsh-base + dsh-web-app; the plugin command adds ours on top).
+let addOut
+try { addOut = dsh('plugin', '--profile', 'web', 'add', installSpec) } catch (error) {
+  const text = `${String(error.stdout ?? '')}\n${String(error.stderr ?? '')}\n${String(error.message ?? '')}`.trim()
+  check(`S1 real ${args.install} install into the web profile`, false, `killed=${error.killed ?? false} timeout=${error.timedOut ?? false} :: ${text.slice(-400).replace(/\r?\n/g, ' | ')}`)
+}
+check(`S1 real ${args.install} install into the web profile`, /Done in/.test(addOut ?? ''))
+
+// S3a: bundles are EXACTLY base + web-app + ours.
+const manifestPath = join(home, 'profiles', 'web', 'package.json')
 let manifestText = readFileSync(manifestPath, 'utf8')
 if (manifestText.charCodeAt(0) === 0xFEFF) manifestText = manifestText.slice(1)
 const manifest = JSON.parse(manifestText)
-manifest.dependencies['@deepseek-ai/dsh-web-app'] = `${SOURCE_DSH.replace(/\\/g, '/')}/packages/bundle/web-app`
-manifest.dsh.profile.bundles = ['@deepseek-ai/dsh-base', '@bululuburuarua666/dsh-plugin-manager', '@deepseek-ai/dsh-web-app']
-writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8')
+const bundles = [...(manifest.dsh?.profile?.bundles ?? [])].sort()
+const expected = [...REQUIRED_BUNDLES].sort()
+check('S3a web profile bundles are exactly base+web-app+manager', JSON.stringify(bundles) === JSON.stringify(expected), bundles.join(', '))
 
-// S3: dump-config shows exactly one manager row.
-const dump = dsh('--profile', 's1', '--dump-config')
+// S3b: dump-config carries exactly one manager row.
+const dump = dsh('--profile', 'web', '--dump-config')
 const rowCount = (dump.match(/- id: dsh-plugin-manager$/gm) ?? []).length
-check('S3 dump-config shows exactly one manager row', rowCount === 1, `rows=${rowCount}`)
+check('S3b dump-config shows exactly one manager row', rowCount === 1, `rows=${rowCount}`)
 
-// Boot + channel probe (S4/S5 partial: tab needs a browser; channel is the
-// programmatic equivalent of the tab's first call).
-const port = String(3400 + Math.floor(Math.random() * 400))
+// S-boot: `dsh web` on the scratch port (WMI breakaway keeps it alive).
+const port = String(3500 + Math.floor(Math.random() * 400))
+const bootCwd = args.deployment === 'source' ? SOURCE_DSH : home
+const log = join(home, 'boot.log').replace(/\\/g, '/')
+const launcher = args.deployment === 'source'
+  ? `cmd /c cd /d ${SOURCE_DSH} && set DSH_HOME=${home}&& pnpm dsh web --port ${port} --no-open > ${log} 2>&1`
+  : `cmd /c cd /d ${home} && set DSH_HOME=${home}&& ${args.npmBootExtra ?? ''}${join(args.npmPrefix ?? join(home, 'prefix'), 'dsh.cmd')} web --port ${port} --no-open > ${log} 2>&1`
+const { promisify } = await import('node:util')
+const { execFile } = await import('node:child_process')
+const run = promisify(execFile)
+const psScript = `(Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${launcher.replace(/'/g, "''")}';CurrentDirectory='${bootCwd.replace(/\\/g, '/')}'}).ProcessId`
 let bootOk = false
-let capsOk = false
 try {
-  const { execFile } = await import('node:child_process')
-  const { promisify } = await import('node:util')
-  const run = promisify(execFile)
-  const log = join(home, 'boot.log').replace(/\\/g, '/')
-  const cmdline = `cmd /c cd /d ${SOURCE_DSH} && set DSH_HOME=${home}&& pnpm dsh --profile s1 --port ${port} --no-open > ${log} 2>&1`
-  const { stdout } = await run('powershell', ['-NoProfile', '-Command', `(Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${cmdline.replace(/'/g, "''")}';CurrentDirectory='${SOURCE_DSH.replace(/\\/g, '/')}'}).ProcessId`], { encoding: 'utf8' })
-  const pid = Number(/(\d+)\s*$/.exec(stdout.trim())?.[1] ?? 0)
+  const { stdout } = await run('powershell', ['-NoProfile', '-Command', psScript], { encoding: 'utf8' })
+  serverPid = Number(/(\d+)\s*$/.exec(stdout.trim())?.[1] ?? 0)
   const deadline = Date.now() + 300_000
   while (Date.now() < deadline) {
     try {
@@ -163,53 +193,56 @@ try {
     } catch { /* not ready */ }
     await new Promise(resolve => setTimeout(resolve, 2_500))
   }
-  check('S-boot the booted stock profile serves HTTP', bootOk, bootOk ? `port ${port}` : 'never ready in 300s')
-  if (bootOk) {
-    await new Promise(resolve => setTimeout(resolve, 15_000))
-    const body = JSON.stringify({ type: 'client-request', rpcId: `s-${Math.random().toString(36).slice(2, 8)}`, method: 'capabilities', payload: { protocolVersion: 1 } })
+} catch (error) {
+  // fall through with bootOk=false
+}
+if (!bootOk) {
+  const tail = existsSync(join(home, 'boot.log'))
+    ? readFileSync(join(home, 'boot.log'), 'utf8').split(/\r?\n/).slice(-6).join(' | ').slice(0, 240)
+    : 'no boot log'
+  check('S-boot dsh web serves HTTP', false, `port ${port} never ready; boot tail: ${tail}`)
+}
+check('S-boot dsh web serves HTTP', bootOk, bootOk ? `port ${port}` : '')
+
+// S5: capabilities over the real channel; S6: spoofed Host draws 403.
+let capsOk = false
+if (bootOk) {
+  await new Promise(resolve => setTimeout(resolve, 15_000))
+  const body = JSON.stringify({ type: 'client-request', rpcId: `s-${Math.random().toString(36).slice(2, 8)}`, method: 'capabilities', payload: { protocolVersion: 1 } })
+  try {
     const res = await fetch(`http://127.0.0.1:${port}/dsh-plugin-manager/capabilities`, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(90_000) })
     const json = await res.json()
     capsOk = json?.result?.ok === true
-    check('S5-channel capabilities over real HTTP', capsOk, `entries=${json?.result?.value?.entries?.length ?? '?'}`)
-    // S6: non-loopback rejected before the handler. Node's fetch forbids
-    // overriding the Host header, so probe through a raw socket: a
-    // spoofed-Host POST must draw 403, never a handler response.
-    {
-      const net = await import('node:net')
-      const raw = net.connect(Number(port), '127.0.0.1')
-      raw.setTimeout(15_000)
-      let rawOut = ''
-      const fenced = await new Promise(resolve => {
-        raw.on('connect', () => {
-          const probeBody = JSON.stringify({ type: 'client-request', rpcId: 's6', method: 'capabilities', payload: { protocolVersion: 1 } })
-          raw.write(`POST /dsh-plugin-manager/capabilities HTTP/1.1\r\nHost: attacker.example\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(probeBody)}\r\nConnection: close\r\n\r\n${probeBody}`)
-        })
-        raw.on('data', chunk => { rawOut += chunk.toString() })
-        raw.on('timeout', () => { raw.destroy(); resolve(false) })
-        raw.on('error', () => resolve(false))
-        raw.on('close', () => resolve(/HTTP\/1\.[01] 403/.test(rawOut)))
-      })
-      check('S6 spoofed-host rejected with 403', fenced, fenced ? 'raw socket drew 403' : `raw response: ${(rawOut.split('\r\n')[0] ?? 'none').slice(0, 60)}`)
-    }
+    check('S5 channel capabilities over real HTTP', capsOk, `entries=${json?.result?.value?.entries?.length ?? '?'}`)
+  } catch (error) {
+    check('S5 channel capabilities over real HTTP', false, String(error.message).slice(0, 120))
   }
-  if (pid !== 0) { try { execFileSync('cmd', ['/c', `taskkill /F /T /PID ${pid} >nul 2>&1`]) } catch { /* gone */ } }
-} catch (error) {
-  check('S-boot the booted stock profile serves HTTP', false, String(error.message).slice(0, 120))
+  // Raw-socket fence probe (Node fetch cannot override Host).
+  const net = await import('node:net')
+  const raw = net.connect(Number(port), '127.0.0.1')
+  raw.setTimeout(15_000)
+  let rawOut = ''
+  const fenced = await new Promise(resolve => {
+    raw.on('connect', () => {
+      raw.write(`POST /dsh-plugin-manager/capabilities HTTP/1.1\r\nHost: attacker.example\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`)
+    })
+    raw.on('data', chunk => { rawOut += chunk.toString() })
+    raw.on('timeout', () => { raw.destroy(); resolve(false) })
+    raw.on('error', () => resolve(false))
+    raw.on('close', () => resolve(/HTTP\/1\.[01] 403/.test(rawOut)))
+  })
+  check('S6 spoofed-host rejected with 403 before the handler', fenced, fenced ? 'raw socket drew 403' : `raw: ${(rawOut.split('\r\n')[0] ?? 'none').slice(0, 60)}`)
 }
 
-// S8: source checkout untouched (we never write into SOURCE_DSH; the
-// profile lives under the isolated home).
-check('S8 source checkout never modified', true, 'all writes under the isolated DSH_HOME')
-
-const record = evidence(bootOk && capsOk ? 'green' : 'failed', checks)
-emit(record)
-process.exit(bootOk && capsOk ? 0 : 1)
-
-/** Write the evidence record to stdout + evidence/. */
-function emit(record) {
-  const dir = join(ROOT, 'evidence')
-  mkdirSync(dir, { recursive: true })
-  const file = join(dir, `${record.quadrant.deployment}-${record.quadrant.install}.json`)
-  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, 'utf8')
-  console.log(`\nevidence → ${file} (status: ${record.status})`)
+// S8: the engine tree (source checkout) is untouched by THIS run.
+if (args.deployment === 'source') {
+  const after = execFileSync('git', ['status', '--porcelain'], { cwd: SOURCE_DSH, encoding: 'utf8' })
+  const drifted = after !== sourceBaseline
+  check('S8 source checkout never modified', !drifted, drifted ? after.split('\n').filter(line => !sourceBaseline.split('\n').includes(line)).slice(0, 3).join(' | ') : '')
 }
+
+// green = ALL required checks present AND ok.
+const required = ['S1 real ' + args.install + ' install into the web profile', 'S3a web profile bundles are exactly base+web-app+manager', 'S3b dump-config shows exactly one manager row', 'S-boot dsh web serves HTTP', 'S5 channel capabilities over real HTTP', 'S6 spoofed-host rejected with 403 before the handler']
+if (args.deployment === 'source') required.push('S8 source checkout never modified')
+const green = required.every(name => checks.some(c => c.name === name && c.ok))
+finish(green ? 'green' : 'failed')

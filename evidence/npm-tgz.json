@@ -1,0 +1,48 @@
+{
+  "quadrant": {
+    "deployment": "npm",
+    "install": "tgz"
+  },
+  "pluginVersion": "0.1.0-alpha.1",
+  "dsh": "0.1.1-rc.2 (b150a551b8d465e31e418e1b2eaf5e79bbb7d28e)",
+  "status": "green",
+  "blockedReason": null,
+  "checks": [
+    {
+      "name": "S0 official npm dsh installed",
+      "ok": true,
+      "detail": "prefix C:\\Users\\13945\\AppData\\Local\\Temp\\stock-npm-prefix"
+    },
+    {
+      "name": "S1 real tgz install into the web profile",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S3a web profile bundles are exactly base+web-app+manager",
+      "ok": true,
+      "detail": "@bululuburuarua666/dsh-plugin-manager, @deepseek-ai/dsh-base, @deepseek-ai/dsh-web-app"
+    },
+    {
+      "name": "S3b dump-config shows exactly one manager row",
+      "ok": true,
+      "detail": "rows=1"
+    },
+    {
+      "name": "S-boot dsh web serves HTTP",
+      "ok": true,
+      "detail": "port 3707"
+    },
+    {
+      "name": "S5 channel capabilities over real HTTP",
+      "ok": true,
+      "detail": "entries=140"
+    },
+    {
+      "name": "S6 spoofed-host rejected with 403 before the handler",
+      "ok": true,
+      "detail": "raw socket drew 403"
+    }
+  ],
+  "timestamp": "2026-08-27T12:28:14.326Z"
+}

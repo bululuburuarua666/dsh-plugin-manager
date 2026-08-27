@@ -69,3 +69,51 @@ jobs:
         run: |
           pnpm run release:assets
           pnpm run verify:assets
+
+  # Stock-DSH quadrants: the real install/boot/RPC/remove cycles against
+  # the OFFICIAL npm-published dsh, on a Windows runner first (the runner's
+  # clean environment also re-tests the local npm findings). Evidence JSON
+  # and boot logs upload as artifacts for every run.
+  stock:
+    name: stock · npm quadrants · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+        install: [tgz, git]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+
+      - name: Install Node 24
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build + pack + assemble assets
+        run: |
+          pnpm run build
+          pnpm run release:assets
+          pnpm run verify:assets
+
+      - name: Stock quadrant (npm · ${{ matrix.install }})
+        run: pnpm run test:stock -- --deployment=npm --install=${{ matrix.install }}
+
+      - name: Upload quadrant evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: stock-npm-${{ matrix.install }}-${{ github.run_id }}
+          path: |
+            evidence/*.json
+          if-no-files-found: error
