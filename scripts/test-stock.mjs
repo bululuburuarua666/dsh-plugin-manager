@@ -14,8 +14,8 @@
 // npm deployment installs @deepseek-ai/dsh from the registry into an
 // isolated prefix (shared per process across calls via NPM_PREFIX).
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { release as osRelease, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -54,6 +54,26 @@ function killServer() {
   try { execFileSync('cmd', ['/c', `taskkill /F /T /PID ${serverPid} >nul 2>&1`]) } catch { /* gone */ }
   serverPid = null
 }
+/** Capture boot log + toolchain/OS/run info next to the quadrant evidence. */
+function persistDiagnostics(dir, quadrant) {
+  const bootLog = join(home ?? '', 'boot.log')
+  if (home !== null && existsSync(bootLog)) {
+    try { copyFileSync(bootLog, join(dir, `${quadrant}-boot.log`)) } catch { /* best effort */ }
+  }
+  const environment = {
+    quadrant,
+    timestamp: stamp,
+    runId: process.env.GITHUB_RUN_ID ?? null,
+    runSha: process.env.GITHUB_SHA ?? null,
+    node: process.version,
+    os: `${process.platform} ${osRelease()}`,
+  }
+  for (const tool of ['pnpm', 'npm']) {
+    try { environment[tool] = execFileSync('cmd', ['/c', `${tool} --version`], { encoding: 'utf8' }).trim() } catch { environment[tool] = 'unavailable' }
+  }
+  try { writeFileSync(join(dir, `${quadrant}-environment.json`), `${JSON.stringify(environment, null, 2)}\n`, 'utf8') } catch { /* best effort */ }
+}
+
 function finish(status, blockedReason = null) {
   killServer()
   const record = {
@@ -67,9 +87,11 @@ function finish(status, blockedReason = null) {
   }
   const dir = join(ROOT, 'evidence')
   mkdirSync(dir, { recursive: true })
-  const file = join(dir, `${record.quadrant.deployment}-${record.quadrant.install}.json`)
+  const quadrant = `${record.quadrant.deployment}-${record.quadrant.install}`
+  const file = join(dir, `${quadrant}.json`)
   writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, 'utf8')
   console.log(`evidence → ${file} (status: ${status})`)
+  persistDiagnostics(dir, quadrant)
   if (home !== null) { try { rmSync(home, { recursive: true, force: true }) } catch { /* best effort */ } }
   process.exit(status === 'green' ? 0 : 1)
 }
@@ -193,8 +215,9 @@ try {
     } catch { /* not ready */ }
     await new Promise(resolve => setTimeout(resolve, 2_500))
   }
-} catch (error) {
-  // fall through with bootOk=false
+} catch {
+  // WMI launch or the readiness loop itself failed: fall through with
+  // bootOk=false so the tail of boot.log names the real cause.
 }
 if (!bootOk) {
   const tail = existsSync(join(home, 'boot.log'))

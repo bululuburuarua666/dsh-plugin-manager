@@ -1,0 +1,10 @@
+{
+  "quadrant": "npm-tgz",
+  "timestamp": "2026-08-27T13:31:23.329Z",
+  "runId": null,
+  "runSha": null,
+  "node": "v24.16.0",
+  "os": "win32 10.0.26200",
+  "pnpm": "11.7.0",
+  "npm": "11.16.0"
+}

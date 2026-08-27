@@ -31,7 +31,7 @@
     {
       "name": "S-boot dsh web serves HTTP",
       "ok": true,
-      "detail": "port 3707"
+      "detail": "port 3700"
     },
     {
       "name": "S5 channel capabilities over real HTTP",
@@ -44,5 +44,5 @@
       "detail": "raw socket drew 403"
     }
   ],
-  "timestamp": "2026-08-27T12:28:14.326Z"
+  "timestamp": "2026-08-27T13:31:23.329Z"
 }

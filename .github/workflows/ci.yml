@@ -70,12 +70,11 @@ jobs:
           pnpm run release:assets
           pnpm run verify:assets
 
-  # Stock-DSH quadrants: the real install/boot/RPC/remove cycles against
-  # the OFFICIAL npm-published dsh, on a Windows runner first (the runner's
-  # clean environment also re-tests the local npm findings). Evidence JSON
-  # and boot logs upload as artifacts for every run.
+  # Stock-DSH quadrants: the real install/boot/RPC cycles against the
+  # OFFICIAL npm-published dsh, on a Windows runner. Each job uploads ONLY
+  # its own quadrant's evidence + boot log + environment record.
   stock:
-    name: stock · npm quadrants · ${{ matrix.os }}
+    name: stock · npm · ${{ matrix.install }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -115,5 +114,7 @@ jobs:
         with:
           name: stock-npm-${{ matrix.install }}-${{ github.run_id }}
           path: |
-            evidence/*.json
+            evidence/npm-${{ matrix.install }}.json
+            evidence/npm-${{ matrix.install }}-boot.log
+            evidence/npm-${{ matrix.install }}-environment.json
           if-no-files-found: error
