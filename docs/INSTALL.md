@@ -6,10 +6,13 @@
 ## From a GitHub Release (ZIP)
 
 1. Download the Release ZIP and unpack it.
-2. Verify the tarball against `SHA256SUMS.txt`:
+2. Verify the tarball against `SHA256SUMS.txt` — compute the hash and
+   **compare it to the recorded digest** (any mismatch: stop and re-download):
 
    ```powershell
+   # prints the hash; compare with the <digest>  ...tgz line in SHA256SUMS.txt
    Get-FileHash .\dsh-plugin-manager-<version>.tgz -Algorithm SHA256
+   Select-String -Path .\SHA256SUMS.txt -Pattern '.tgz'
    ```
 
 3. Install into your profile (source checkout users prefix `pnpm`):
@@ -27,6 +30,15 @@
 
 ```powershell
 dsh plugin --profile web add "git+https://github.com/bululuburuarua666/dsh-plugin-manager.git#v<version>"
+```
+
+For high assurance, pin the exact 40-character commit of the release
+instead of the movable tag name:
+
+```powershell
+dsh plugin --profile web add "git+https://github.com/bululuburuarua666/dsh-plugin-manager.git#<40-char-commit-sha>"
+# example shape:
+dsh plugin --profile web add "git+https://github.com/bululuburuarua666/dsh-plugin-manager.git#0123456789abcdef0123456789abcdef01234567"
 ```
 
 The package ships prebuilt `lib/` and declares no install scripts, so Git

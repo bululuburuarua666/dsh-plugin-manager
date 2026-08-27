@@ -6,10 +6,13 @@
 ## 从 GitHub Release（ZIP）安装
 
 1. 下载 Release ZIP 并解压。
-2. 用 `SHA256SUMS.txt` 校验 tarball：
+2. 用 `SHA256SUMS.txt` 校验 tarball——计算哈希并**与记录的摘要比对**
+   （不一致即停止并重新下载）：
 
    ```powershell
+   # 输出哈希；与 SHA256SUMS.txt 中 <digest>  ...tgz 行比对
    Get-FileHash .\dsh-plugin-manager-<version>.tgz -Algorithm SHA256
+   Select-String -Path .\SHA256SUMS.txt -Pattern '.tgz'
    ```
 
 3. 安装到 profile（源码部署用户在命令前加 `pnpm`）：
@@ -26,6 +29,14 @@
 
 ```powershell
 dsh plugin --profile web add "git+https://github.com/bululuburuarua666/dsh-plugin-manager.git#v<version>"
+```
+
+高保证场景请固定 release 的 40 位完整 commit，而非可移动的 tag 名：
+
+```powershell
+dsh plugin --profile web add "git+https://github.com/bululuburuarua666/dsh-plugin-manager.git#<40位commit-SHA>"
+# 形态示例：
+dsh plugin --profile web add "git+https://github.com/bululuburuarua666/dsh-plugin-manager.git#0123456789abcdef0123456789abcdef01234567"
 ```
 
 包内自带已构建的 `lib/` 且声明零安装脚本，Git 安装无需放行构建。

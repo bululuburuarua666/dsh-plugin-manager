@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['tests/**/*.spec.ts', 'tests/**/*.spec.tsx'],
+    // The zip round-trip suite runs under node:test (it uses node:test APIs).
     environment: 'node',
     environmentMatchGlobs: [
       ['tests/client/**', 'jsdom'],

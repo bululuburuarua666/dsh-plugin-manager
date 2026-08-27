@@ -11,7 +11,9 @@ as a **Plugin manager** tab under Settings → Plugins.
 
 Status: **development preview** (`0.1.0-alpha.1`). The full gate set
 (226 tests, 100% coverage on the nine core modules, byte-reproducible
-builds, byte-verified release assets) runs on three platforms.
+builds, byte-verified release assets) is **CI-configured for three
+platforms**; first real cross-platform runs land with the initial GitHub
+push.
 
 ## What it does
 

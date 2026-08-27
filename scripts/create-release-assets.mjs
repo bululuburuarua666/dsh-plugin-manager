@@ -4,13 +4,14 @@
 //   dsh-plugin-manager-<v>.zip                    (tgz + INSTALL.md + INSTALL.zh.md
 //                                                  + SHA256SUMS.txt + compatibility.json)
 //   SHA256SUMS.txt                                (SHA-256 over the tgz)
-// Cross-platform: node fs for listing, bsdtar (tar -a -cf) for the zip.
-// The version comes from package.json — one source of truth.
+// Cross-platform: the ZIP is written by the dependency-free writer in
+// ./zip.mjs (real ZIP magic, STORE/deflate), never by `tar -a` (GNU tar
+// would emit a POSIX tar named .zip). The version comes from package.json.
 import { createHash } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { zipStore } from './zip.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -69,9 +70,16 @@ for (const doc of ['INSTALL.md', 'INSTALL.zh.md']) {
 }
 copyFileSync(join(ROOT, 'compatibility.json'), join(stage, 'compatibility.json'))
 
-// Zip via bsdtar (format selected by the .zip extension with -a).
+// Write a REAL zip through the dependency-free writer (magic + CRC valid on
+// every platform; unzip-compatible).
 rmSync(zipPath, { force: true })
-execFileSync('tar', ['-a', '-cf', zipPath, '-C', stage, tgzName, 'SHA256SUMS.txt', 'compatibility.json', 'INSTALL.md', 'INSTALL.zh.md'])
+writeFileSync(zipPath, zipStore([
+  { name: tgzName, data: readFileSync(join(stage, tgzName)) },
+  { name: 'SHA256SUMS.txt', data: readFileSync(join(stage, 'SHA256SUMS.txt')) },
+  { name: 'compatibility.json', data: readFileSync(join(stage, 'compatibility.json')) },
+  { name: 'INSTALL.md', data: readFileSync(join(stage, 'INSTALL.md')) },
+  { name: 'INSTALL.zh.md', data: readFileSync(join(stage, 'INSTALL.zh.md')) },
+]))
 rmSync(stage, { recursive: true, force: true })
 
 const finalDigest = createHash('sha256').update(readFileSync(tgzPath)).digest('hex')
