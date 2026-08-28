@@ -15,9 +15,20 @@ export declare const LIFECYCLE_BEGIN_MARKER = "# BEGIN DSH PLUGIN LIFECYCLE \u20
 export declare const LIFECYCLE_END_MARKER = "# END DSH PLUGIN LIFECYCLE";
 /** One managed toggle row: `disabled: true` disables, `false` writes null. */
 export interface ManagedToggleRow {
+    /**
+     * Target id in the PATCH-LAYER data space: the row's own data id, i.e. the
+     * last `:`-segment of the loader tree id (`include:timer` → `timer`).
+     * `applyEntryPatches` matches data ids, not tree paths — a tree id written
+     * verbatim silently matches nothing.
+     */
     readonly entryId: string;
     readonly disabled: boolean;
 }
+/**
+ * Translate a loader tree entry id into the patch-layer data id it targets
+ * (the last `:`-segment; ids without a colon are their own data id).
+ */
+export declare function dataIdOf(entryId: string): string;
 /** Editor failure codes surfaced as lifecycle error codes. */
 export type PatchEditorFailureCode = 'INVALID_PATCH' | 'MANAGED_BLOCK_INVALID' | 'UNSUPPORTED_PATCH_SHAPE';
 /** Editor outcome: candidate bytes, or a structured refusal. */

@@ -21,8 +21,23 @@ export const LIFECYCLE_END_MARKER = '# END DSH PLUGIN LIFECYCLE'
 
 /** One managed toggle row: `disabled: true` disables, `false` writes null. */
 export interface ManagedToggleRow {
+  /**
+   * Target id in the PATCH-LAYER data space: the row's own data id, i.e. the
+   * last `:`-segment of the loader tree id (`include:timer` → `timer`).
+   * `applyEntryPatches` matches data ids, not tree paths — a tree id written
+   * verbatim silently matches nothing.
+   */
   readonly entryId: string
   readonly disabled: boolean
+}
+
+/**
+ * Translate a loader tree entry id into the patch-layer data id it targets
+ * (the last `:`-segment; ids without a colon are their own data id).
+ */
+export function dataIdOf(entryId: string): string {
+  const cut = entryId.lastIndexOf(':')
+  return cut === -1 ? entryId : entryId.slice(cut + 1)
 }
 
 /** Editor failure codes surfaced as lifecycle error codes. */
@@ -107,6 +122,32 @@ function serializeManagedRows(rows: readonly ManagedToggleRow[]): string[] {
 }
 
 /**
+ * True when the body is the official no-layer template shape: comments and
+ * blank lines plus exactly one bare `[]` line (empty flow-sequence root).
+ * The first managed write must REPLACE that line — appending under a flow
+ * root is not a valid YAML document — and collapsing back to zero rows must
+ * re-emit it, because a comment-only document parses as null and the boot
+ * path rejects null patch lists.
+ */
+function splitEmptyFlowRoot(body: readonly string[]): { comments: string[]; markerLine: number } | null {
+  let markerLine = -1
+  for (let index = 0; index < body.length; index += 1) {
+    const line = body[index] as string
+    const trimmed = line.trim()
+    if (trimmed === '') continue
+    if (trimmed.startsWith('#')) continue
+    if (trimmed === '[]' && markerLine === -1) {
+      markerLine = index
+      continue
+    }
+    return null
+  }
+  if (markerLine === -1) return null
+  const comments = body.filter((_, index) => index !== markerLine)
+  return { comments, markerLine }
+}
+
+/**
  * Replace the lifecycle marker block inside a patch file. With no markers the
  * block is appended after the existing top-level sequence; exactly one marker
  * pair replaces its inner rows. Duplicate, nested, or misordered markers, an
@@ -142,7 +183,16 @@ export function applyManagedToggleRows(source: string, rows: readonly ManagedTog
   const blockLines = rows.length === 0 ? [] : [LIFECYCLE_BEGIN_MARKER, ...serializeManagedRows(rows), LIFECYCLE_END_MARKER]
   let next: string[]
   if (beginAt.length === 0) {
-    next = rows.length === 0 ? body : [...body, ...blockLines]
+    const emptyRoot = splitEmptyFlowRoot(body)
+    if (emptyRoot !== null) {
+      // The official template's comments + `[]`: the first managed rows
+      // replace the flow root; collapsing back to zero rows restores it.
+      next = rows.length === 0
+        ? body
+        : [...emptyRoot.comments, ...blockLines]
+    } else {
+      next = rows.length === 0 ? body : [...body, ...blockLines]
+    }
   } else {
     const begin = beginAt[0] as number
     const end = endAt[0] as number

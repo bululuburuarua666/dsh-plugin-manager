@@ -321,10 +321,12 @@ describe('manager channel contract (fail-closed gates)', () => {
     const timer = setInterval(() => {
       try {
         const text = readFileSync(patchPath, 'utf8')
-        const match = /- id: "([^"]+)"\n  disabled: true/.exec(text)
+        // Managed rows carry the patch-layer DATA id (unquoted when plain):
+        // `timer` targets the loader row `include:timer`.
+        const match = /- id: "?([^\n"]+)"?\n  disabled: true/.exec(text)
         if (match === null) return
         for (const row of ctx.rows) {
-          if (row.id === match[1] && !row.disabled) row.disabled = true
+          if ((row.id === match[1] || row.id.endsWith(`:${match[1]}`)) && !row.disabled) row.disabled = true
         }
       } catch { /* not written yet */ }
     }, 10)

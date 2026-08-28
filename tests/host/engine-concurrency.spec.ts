@@ -39,7 +39,9 @@ function startPatchDriver(rows: MutableRow[], patchPath: string): () => void {
     const managed = readManagedToggleRows(text)
     if (managed === null || !managed.ok) return
     for (const row of managed.rows) {
-      const entry = rows.find(candidate => candidate.id === row.entryId)
+      // Managed rows speak the patch-layer DATA id (last ':'-segment).
+      const entry = rows.find(candidate => candidate.id === row.entryId
+        || candidate.id.endsWith(`:${row.entryId}`))
       if (entry === undefined || entry.disabled === row.disabled) continue
       entry.options.disabled = row.disabled ? true : null
       entry.disabled = row.disabled
@@ -103,10 +105,9 @@ describe('LifecycleEngine concurrency (per-profile serial queue)', () => {
     expect(done1.state).toBe('succeeded')
     expect(done2.state).toBe('failed')
     expect(done2.errorCode).toBe('PROFILE_CHANGED')
-    // The first row landed; the second never wrote.
-    const text = readText(h.patchPath)
-    expect(text).toContain('include:a')
-    expect(text).not.toContain('include:b')
+    // The first row landed (as its patch-layer data id `a`); the second never wrote.
+    const written = readManagedToggleRows(readText(h.patchPath))
+    expect(written !== null && written.ok ? written.rows : []).toEqual([{ entryId: 'a', disabled: true }])
     expect(h.rows.find(row => row.id === 'include:a')?.disabled).toBe(true)
     expect(h.rows.find(row => row.id === 'include:b')?.disabled).toBe(false)
   }, 15_000)
@@ -152,10 +153,9 @@ describe('LifecycleEngine concurrency (per-profile serial queue)', () => {
     expect(done1.state).toBe('succeeded')
     expect(done2.state).toBe('failed')
     expect(done2.errorCode).toBe('PROFILE_CHANGED')
-    // Only the first entry's row was written; the second wrote nothing.
-    const text = readText(h.patchPath)
-    expect(text).toContain('include:a')
-    expect(text).not.toContain('include:b')
+    // Only the first entry's row was written (as data id `a`); the second wrote nothing.
+    const written = readManagedToggleRows(readText(h.patchPath))
+    expect(written !== null && written.ok ? written.rows : []).toEqual([{ entryId: 'a', disabled: true }])
   }, 15_000)
 
   it('reports ROLLBACK_INCOMPLETE when the restore write cannot take the lock', async () => {

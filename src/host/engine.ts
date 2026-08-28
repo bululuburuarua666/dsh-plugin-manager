@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { writeFileAtomic, withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import {
   applyManagedToggleRows,
+  dataIdOf,
   readManagedToggleRows,
   type ManagedToggleRow,
 } from './patch-editor.ts'
@@ -169,8 +170,8 @@ export class LifecycleEngine {
         throw lifecycleFailure('MANAGED_BLOCK_INVALID', current.message)
       }
       if (current !== null) {
-        const settledIds = settled.flatMap(record => record.entryIds)
-        const kept = current.rows.filter(row => !settledIds.includes(row.entryId))
+        const settledDataIds = settled.flatMap(record => record.entryIds).map(dataIdOf)
+        const kept = current.rows.filter(row => !settledDataIds.includes(row.entryId))
         const rewritten = applyManagedToggleRows(patchBefore, kept)
         if (!rewritten.ok) throw lifecycleFailure(rewritten.code, rewritten.message)
         await writeFileAtomic(patchPath, rewritten.content, { mode: 0o600 })
@@ -394,9 +395,10 @@ export class LifecycleEngine {
         if (current !== null && !current.ok) {
           throw lifecycleFailure('MANAGED_BLOCK_INVALID', current.message)
         }
+        const bindingDataId = dataIdOf(binding.entryId)
         const rows: ManagedToggleRow[] = (current === null ? [] : current.rows)
-          .filter(row => row.entryId !== binding.entryId)
-        rows.push({ entryId: binding.entryId, disabled: disable })
+          .filter(row => row.entryId !== bindingDataId)
+        rows.push({ entryId: bindingDataId, disabled: disable })
         const candidate = applyManagedToggleRows(state.beforeText, rows)
         if (!candidate.ok) throw lifecycleFailure(candidate.code, candidate.message)
         await writeFileAtomic(bundle.patchPath, candidate.content, { mode: 0o600 })

@@ -12,6 +12,7 @@ import { load as parseYaml } from 'js-yaml'
 import { lifecycleFailure } from './failure.ts'
 import {
   applyManagedToggleRows,
+  dataIdOf,
   readManagedToggleRows,
   removeManualInsertRows,
   type ManagedToggleRow,
@@ -152,8 +153,9 @@ export async function runUninstallTransaction(options: UninstallOptions): Promis
       if (current !== null && !current.ok) {
         throw lifecycleFailure('MANAGED_BLOCK_INVALID', current.message)
       }
-      rows.push(...(current === null ? [] : current.rows).filter(row => !options.affectedEntryIds.includes(row.entryId)))
-      for (const id of options.affectedEntryIds) rows.push({ entryId: id, disabled: true })
+      const affectedDataIds = options.affectedEntryIds.map(dataIdOf)
+      rows.push(...(current === null ? [] : current.rows).filter(row => !affectedDataIds.includes(row.entryId)))
+      for (const dataId of affectedDataIds) rows.push({ entryId: dataId, disabled: true })
       const edited = applyManagedToggleRows(candidates, rows)
       /* v8 ignore next -- every input reaching this point already passed the same validation the editor applies. */
       if (!edited.ok) throw lifecycleFailure(edited.code, edited.message)
@@ -235,7 +237,8 @@ async function dropSplicedManagedRows(
     /* v8 ignore start -- exercised by the manual-insert splice test; the instrumented nested callback is misattributed. */
     const cleaned = readManagedToggleRows(options.io.readText(options.patchPath))
     if (cleaned === null || !cleaned.ok) return
-    const kept = cleaned.rows.filter(row => !splicedEntryIds.includes(row.entryId))
+    const splicedDataIds = splicedEntryIds.map(dataIdOf)
+    const kept = cleaned.rows.filter(row => !splicedDataIds.includes(row.entryId))
     const rewritten = applyManagedToggleRows(options.io.readText(options.patchPath), kept)
     if (!rewritten.ok) return
     await options.io.writeAtomic(options.patchPath, rewritten.content)

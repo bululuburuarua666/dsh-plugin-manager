@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { LifecycleEngine, type EngineHost } from '../../src/host/engine.ts'
-import { readManagedToggleRows } from '../../src/host/patch-editor.ts'
+import { dataIdOf, readManagedToggleRows } from '../../src/host/patch-editor.ts'
 import { PROTECTED_PACKAGES } from '../../src/host/profile-evidence.ts'
 import type { LoaderEntry } from '../../src/host/cordis.ts'
 import type { PluginLifecycleOperationView } from '../../src/host/engine-types.ts'
@@ -48,7 +48,11 @@ function startPatchDriver(rows: MutableRow[], patchPath: string): () => void {
     const managed = readManagedToggleRows(text)
     if (managed === null || !managed.ok) return
     for (const row of managed.rows) {
-      const entry = rows.find(candidate => candidate.id === row.entryId)
+      // Managed rows speak the patch-layer DATA id (last ':'-segment of the
+      // tree id); map back onto the fake loader row the same way the real
+      // composition's id indexing would.
+      const entry = rows.find(candidate => candidate.id === row.entryId
+        || candidate.id.endsWith(`:${row.entryId}`))
       if (entry === undefined) continue
       entry.options.disabled = row.disabled ? true : null
       // An ancestor group override (simulated by the test setting
@@ -133,7 +137,7 @@ describe('LifecycleEngine toggle flow', () => {
     expect(h.rows.find(entry => entry.id === entryId)?.disabled).toBe(true)
 
     const rows = readManagedToggleRows(readText(h.patchPath))
-    expect(rows !== null && rows.ok ? rows.rows : []).toEqual([{ entryId, disabled: true }])
+    expect(rows !== null && rows.ok ? rows.rows : []).toEqual([{ entryId: dataIdOf(entryId), disabled: true }])
 
     const next = h.engine.capabilities()
     const enable = h.engine.preview({ entryId, action: 'enable', expectedRevision: next.revision })
@@ -142,7 +146,7 @@ describe('LifecycleEngine toggle flow', () => {
     expect(h.rows.find(entry => entry.id === entryId)?.disabled).toBe(false)
     // The enable keeps its explicit null row (an ancestor group may override).
     const after = readManagedToggleRows(readText(h.patchPath))
-    expect(after !== null && after.ok ? after.rows : []).toEqual([{ entryId, disabled: false }])
+    expect(after !== null && after.ok ? after.rows : []).toEqual([{ entryId: dataIdOf(entryId), disabled: false }])
   })
 
   it('rejects stale revisions, unknown entries, and unknown tokens', async () => {
@@ -209,7 +213,7 @@ describe('LifecycleEngine toggle flow', () => {
     expect(done.state).toBe('failed')
     expect(done.errorCode).toBe('BLOCKED_BY_ANCESTOR')
     const rows = readManagedToggleRows(readText(h.patchPath))
-    expect(rows !== null && rows.ok ? rows.rows : []).toEqual([{ entryId: 'include:noop', disabled: false }])
+    expect(rows !== null && rows.ok ? rows.rows : []).toEqual([{ entryId: dataIdOf('include:noop'), disabled: false }])
   }, 15_000)
 
   it('fails cleanly when the managed block is malformed', async () => {
