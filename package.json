@@ -2,6 +2,7 @@
   "name": "@bululuburuarua666/dsh-plugin-manager",
   "version": "0.1.0-alpha.1",
   "description": "DSH Plugin Manager — plugin origin classification and lifecycle management (disable/enable/uninstall) for DeepSeek Harness. Community project; not affiliated with or endorsed by DeepSeek.",
+  "packageManager": "pnpm@11.7.0",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
