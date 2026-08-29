@@ -1,4 +1,4 @@
-# DSH Plugin Manager
+# 📦 DSH Plugin Manager
 
 English | [中文](README.zh.md)
 
@@ -18,7 +18,7 @@ DSH is built around plugins. As a profile grows, it becomes important to answer 
 
 This project is designed around those questions.
 
-## Highlights
+## ✨ Highlights
 
 - **Origin-aware inventory** — distinguish official, personal, open-source, and open-source customized plugins.
 - **Automatic classification with human correction** — keep the detected origin visible, while allowing a per-package manual override.
@@ -28,7 +28,7 @@ This project is designed around those questions.
 - **Conservative permissions** — a display label never grants trust, toggle permission, uninstall permission, or protection bypass.
 - **Bilingual UI** — English and Simplified Chinese labels are included.
 
-## What it looks like
+## 👀 What it looks like
 
 After installation, open:
 
@@ -38,7 +38,7 @@ Settings → Plugins → Plugin Manager
 
 Each entry can expose its current state, origin, detected origin, metadata, and the actions allowed for that exact DSH loader entry. Unsupported or protected entries are reported instead of being given a misleading action button.
 
-## Quick start
+## 🚀 Quick start
 
 ### Prerequisites
 
@@ -88,7 +88,7 @@ For a source checkout, the equivalent command is:
 pnpm dsh web
 ```
 
-## Origin classification
+## 🏷️ Origin classification
 
 The manager separates automatic detection from the user's chosen display classification.
 
@@ -113,7 +113,7 @@ Manual classification is intentionally presentation-only:
 
 > Marking a third-party package as “Official” does not make it trusted and does not change whether it can be toggled, uninstalled, or protected.
 
-## Lifecycle controls
+## 🎛️ Lifecycle controls
 
 
 <img width="590" height="548" alt="image" src="https://github.com/user-attachments/assets/15ee582a-4c1d-4059-b156-53f867dc97e7" />
@@ -146,7 +146,7 @@ backup → patch splice → fiber disposal → package-manager removal → postc
 
 The operation is scoped to the selected package and its authorized patch entry. It uses profile serialization, cross-process locks, revision/hash checks, and post-operation validation. If a clean removal is impossible, the manager records a pending removal for the next startup instead of pretending that the uninstall finished.
 
-## Security model
+## 🔐 Security model
 
 The manager is intentionally conservative around operations that modify a running DSH profile:
 
@@ -162,7 +162,7 @@ Important: DSH plugins are executable code. This project manages plugin lifecycl
 
 See [SECURITY-MODEL.md](docs/SECURITY-MODEL.md) for the detailed privilege analysis and [RECOVERY.md](docs/RECOVERY.md) for failure handling.
 
-## Compatibility
+## 🧩 Compatibility
 
 | DSH version | Status | Notes |
 | --- | --- | --- |
@@ -179,7 +179,7 @@ The current release is deliberately published before the next main-program adapt
 
 Read the [compatibility matrix](docs/COMPATIBILITY.md) before installing into a non-default profile. DSH itself is in developer preview and may introduce breaking changes.
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
 ### The tab does not appear
 
@@ -203,7 +203,7 @@ Restart the same DSH profile once, then check the operation status and logs. Do 
 
 Close other profile editors or DSH instances that modify the same profile, reopen the manager, and retry from a fresh preview. A stale revision or hash is rejected to avoid overwriting someone else's change.
 
-## Development
+## 🛠️ Development
 
 ```powershell
 pnpm install
@@ -225,7 +225,7 @@ The current release gate covers 274 tests, 100% thresholds for the core modules,
 
 When reporting a problem, include the DSH version, plugin version, install source (Git or `.tgz`), profile name, operation, displayed error code, and a redacted log excerpt. Never include tokens, cookies, private keys, or unredacted user paths.
 
-## Uninstall the manager
+## 🗑️ Uninstall the manager
 
 ```powershell
 dsh plugin --profile web remove @bululuburuarua666/dsh-plugin-manager
@@ -233,16 +233,16 @@ dsh plugin --profile web remove @bululuburuarua666/dsh-plugin-manager
 
 Restart DSH after removal.
 
-## Project status
+## 📌 Project status
 
 This is an independent community project and is not affiliated with or endorsed by DeepSeek. The project is evolving alongside DSH's developer-preview APIs; compatibility is versioned and documented rather than assumed.
 
 Contributions, issue reports, and compatibility feedback are welcome. See the repository contribution guidelines before opening a pull request. If this project is useful to you, a star on [GitHub](https://github.com/bululuburuarua666/dsh-plugin-manager) is always appreciated.
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
 The lifecycle-management UX and the plugin-update awareness flow were designed with reference to [`dsh-update-checker`](https://github.com/Airmetro/dsh-update-checker) by **Airmetro** — an open-source DSH plugin that auto-checks DeepSeek Harness and third-party plugin updates, notifies in the Web GUI, and ships one-click update with backup/rollback and a restart watchdog. Our deployments integrate that update flow alongside this manager, and its design informed this project from day one. Many thanks to its author.
 
-## License
+## 📄 License
 
 MIT — see [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -1,4 +1,4 @@
-# DSH 插件管理器
+# 📦 DSH 插件管理器
 
 [English](README.md) | 中文
 
@@ -18,7 +18,7 @@ DSH 的核心是插件。当一个 profile 逐渐装入越来越多插件时，�
 
 本项目围绕这三个问题设计。
 
-## 核心能力
+## ✨ 核心能力
 
 - **来源感知清单** —— 区分官方、个人、开源、开源·定制插件。
 - **自动识别 + 人工纠正** —— 保留自动判断结果，同时支持按包名手动覆盖。
@@ -28,7 +28,7 @@ DSH 的核心是插件。当一个 profile 逐渐装入越来越多插件时，�
 - **保守的权限边界** —— 分类徽标只影响展示，不会授予信任、停用、启用、卸载或解除保护的权限。
 - **双语界面** —— 内置简体中文与英文文案。
 
-## 使用位置
+## 👀 使用位置
 
 安装后打开：
 
@@ -38,7 +38,7 @@ DSH 的核心是插件。当一个 profile 逐渐装入越来越多插件时，�
 
 每个条目可以展示当前状态、来源、自动判断结果、元数据，以及针对该 DSH Loader 条目实际允许的操作。对于不支持或受保护的条目，界面会说明原因，而不是显示一个注定失败的按钮。
 
-## 快速开始
+## 🚀 快速开始
 
 ### 前置条件
 
@@ -88,7 +88,7 @@ dsh --profile web
 pnpm dsh web
 ```
 
-## 来源分类
+## 🏷️ 来源分类
 
 管理器将自动判断结果与用户选择的展示分类分开保存。
 
@@ -110,7 +110,7 @@ pnpm dsh web
 
 > 把第三方包标为“官方”，不会让它获得官方信任，也不会改变它是否可停用、可卸载或受保护。
 
-## 生命周期控制
+## 🎛️ 生命周期控制
 
 ### 停用与启用
 
@@ -140,7 +140,7 @@ pnpm dsh web
 
 操作范围限定为所选包及其授权补丁条目，并使用 profile 串行队列、跨进程锁、revision/hash 检查和后置校验。如果无法干净完成，管理器会写入 pending removal，留待下次启动处理，而不是把未完成的卸载报告成成功。
 
-## 安全模型
+## 🔐 安全模型
 
 管理器对修改正在运行的 DSH profile 保持保守边界：
 
@@ -156,7 +156,7 @@ pnpm dsh web
 
 详见[安全模型](docs/SECURITY-MODEL.zh.md)与[恢复指南](docs/RECOVERY.zh.md)。
 
-## 兼容性
+## 🧩 兼容性
 
 | DSH 版本 | 状态 | 说明 |
 | --- | --- | --- |
@@ -173,7 +173,7 @@ pnpm dsh web
 
 在非默认 profile 上安装前，请先阅读[兼容性矩阵](docs/COMPATIBILITY.zh.md)。DSH 自身处于开发预览阶段，可能引入破坏性变更。
 
-## 常见问题
+## 🔧 常见问题
 
 ### 看不到插件管理页签
 
@@ -197,7 +197,7 @@ dsh --profile web --dump-config
 
 关闭其他会修改同一 profile 的编辑器或 DSH 实例，重新打开管理器，从新的 preview 开始操作。过期 revision 或 hash 会被拒绝，以避免覆盖他人的修改。
 
-## 开发
+## 🛠️ 开发
 
 ```powershell
 pnpm install
@@ -219,7 +219,7 @@ pnpm run test:lifecycle    # 隔离 DSH_HOME 上的真实停用/启用变更 E2E
 
 反馈问题时请提供 DSH 版本、插件版本、安装来源（Git 或 `.tgz`）、profile 名称、操作类型、界面错误码和脱敏后的日志片段。不要提交 token、cookie、私钥或未脱敏的用户路径。
 
-## 卸载管理器
+## 🗑️ 卸载管理器
 
 ```powershell
 dsh plugin --profile web remove @bululuburuarua666/dsh-plugin-manager
@@ -227,16 +227,16 @@ dsh plugin --profile web remove @bululuburuarua666/dsh-plugin-manager
 
 卸载后重启 DSH。
 
-## 项目状态
+## 📌 项目状态
 
 这是独立的社区项目，与 DeepSeek 无隶属关系，亦未获其背书。项目会跟随 DSH 的开发预览 API 演进；兼容性以版本和文档为准，不作默认假设。
 
 欢迎提交贡献、问题报告和兼容性反馈。发起 Pull Request 前请先阅读仓库贡献指南。如果这个项目对你有用，欢迎在 [GitHub](https://github.com/bululuburuarua666/dsh-plugin-manager) 上点一个 Star 支持一下。
 
-## 致谢
+## 🙏 致谢
 
 本项目的生命周期管理交互与插件更新感知流程，参考了 **Airmetro** 的开源项目 [`dsh-update-checker`](https://github.com/Airmetro/dsh-update-checker)——它会自动检查 DeepSeek Harness 与第三方插件更新、在 Web GUI 中通知，并提供带备份/回滚与重启看护的一键更新。我们的部署环境将该更新流程与本管理器整合使用，其设计从一开始就为项目提供了参照。在此向作者致谢。
 
-## 许可证
+## 📄 许可证
 
 MIT —— 见 [LICENSE](LICENSE) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
