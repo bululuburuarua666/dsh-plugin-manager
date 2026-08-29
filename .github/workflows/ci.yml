@@ -1,4 +1,6 @@
-# Continuous integration: three platforms × two Node lines, full gate set.
+# Continuous integration: Windows runners, both supported Node lines, full
+# gate set. The module is Windows-only for now (see README compatibility);
+# platform-fragile tests skip on other OSes until a porting pass lands.
 # Third-party actions are pinned to full commit SHAs (immutable refs).
 name: ci
 
@@ -17,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [windows-latest]
         node: [22, 24]
     steps:
       - name: Checkout

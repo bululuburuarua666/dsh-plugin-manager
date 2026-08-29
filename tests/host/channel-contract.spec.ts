@@ -123,7 +123,9 @@ function mount(options: { connection?: boolean } = {}): { ctx: FakePluginContext
 }
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  // macOS fs notification latency can hold a dir entry past the last write;
+  // retry the teardown removal instead of racing it.
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   warnings.splice(0)
   infos.splice(0)
 })

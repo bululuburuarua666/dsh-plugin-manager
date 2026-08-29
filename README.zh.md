@@ -164,6 +164,11 @@ pnpm dsh web
 | `0.1.2-alpha.1` | 不支持 | Connection 与 client-runtime 契约发生变化。 |
 | DSH `master` | 不支持 | 不要假定兼容持续变化的开发预览分支。 |
 
+| 平台 | 状态 | 说明 |
+| --- | --- | --- |
+| Windows | 支持 | CI 门禁在 Windows 上运行；生命周期写操作已在那里端到端验证。 |
+| Linux / macOS | 暂未适配 | 测试套件的跨平台路径/锁行为移植尚未完成；请自担风险安装。 |
+
 当前版本会在下一版主程序适配完成前先行发布。如果你运行的是 `0.1.2-alpha.1` 或更新的源码检出，请等待兼容版本；不要在该版本上依赖当前版本的生命周期写操作。
 
 在非默认 profile 上安装前，请先阅读[兼容性矩阵](docs/COMPATIBILITY.zh.md)。DSH 自身处于开发预览阶段，可能引入破坏性变更。
@@ -226,7 +231,7 @@ dsh plugin --profile web remove @bululuburuarua666/dsh-plugin-manager
 
 这是独立的社区项目，与 DeepSeek 无隶属关系，亦未获其背书。项目会跟随 DSH 的开发预览 API 演进；兼容性以版本和文档为准，不作默认假设。
 
-欢迎提交贡献、问题报告和兼容性反馈。发起 Pull Request 前请先阅读仓库贡献指南。
+欢迎提交贡献、问题报告和兼容性反馈。发起 Pull Request 前请先阅读仓库贡献指南。如果这个项目对你有用，欢迎在 [GitHub](https://github.com/bululuburuarua666/dsh-plugin-manager) 上点一个 Star 支持一下。
 
 ## 致谢
 

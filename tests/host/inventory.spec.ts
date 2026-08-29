@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -12,7 +12,9 @@ afterEach(() => {
 })
 
 function profileFixture(): { home: string; profileDir: string; baseUrl: string } {
-  const home = mkdtempSync(join(tmpdir(), 'dsh-mgr-inv-'))
+  // macOS tmpdir() is a symlink (/var -> /private/var); canonicalize so
+  // realpath'd code under test compares equal to fixture paths.
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-mgr-inv-')))
   tempDirs.push(home)
   const profileDir = join(home, 'profiles', 'web')
   mkdirSync(join(profileDir, 'node_modules'), { recursive: true })

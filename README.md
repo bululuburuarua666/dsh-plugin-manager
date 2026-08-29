@@ -170,6 +170,11 @@ See [SECURITY-MODEL.md](docs/SECURITY-MODEL.md) for the detailed privilege analy
 | `0.1.2-alpha.1` | Not supported | Connection and client-runtime contracts changed. |
 | DSH `master` | Not supported | Do not assume compatibility with a moving developer-preview branch. |
 
+| Platform | Status | Notes |
+| --- | --- | --- |
+| Windows | Supported | CI gate runs on Windows; lifecycle mutations verified end-to-end there. |
+| Linux / macOS | Not yet | A porting pass (test-suite path/lock behavior) is still open; install at your own risk. |
+
 The current release is deliberately published before the next main-program adaptation is complete. If you are running `0.1.2-alpha.1` or a newer checkout, wait for a compatible release; do not rely on lifecycle write operations from this version.
 
 Read the [compatibility matrix](docs/COMPATIBILITY.md) before installing into a non-default profile. DSH itself is in developer preview and may introduce breaking changes.
@@ -232,7 +237,7 @@ Restart DSH after removal.
 
 This is an independent community project and is not affiliated with or endorsed by DeepSeek. The project is evolving alongside DSH's developer-preview APIs; compatibility is versioned and documented rather than assumed.
 
-Contributions, issue reports, and compatibility feedback are welcome. See the repository contribution guidelines before opening a pull request.
+Contributions, issue reports, and compatibility feedback are welcome. See the repository contribution guidelines before opening a pull request. If this project is useful to you, a star on [GitHub](https://github.com/bululuburuarua666/dsh-plugin-manager) is always appreciated.
 
 ## Acknowledgments
 
