@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -25,7 +25,9 @@ afterEach(() => {
 })
 
 function fixture(): string {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-lifecycle-evidence-'))
+  // macOS tmpdir() is a symlink (/var -> /private/var); canonicalize so
+  // realpath'd code under test compares equal to fixture paths.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-lifecycle-evidence-')))
   tempDirs.push(root)
   return root
 }

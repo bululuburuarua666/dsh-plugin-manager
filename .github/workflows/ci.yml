@@ -102,6 +102,7 @@ jobs:
       - name: Build + pack + assemble assets
         run: |
           pnpm run build
+          pnpm pack --pack-destination dist
           pnpm run release:assets
           pnpm run verify:assets
 
