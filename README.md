@@ -92,6 +92,14 @@ pnpm dsh web
 
 The manager separates automatic detection from the user's chosen display classification.
 
+
+<img width="590" height="550" alt="image" src="https://github.com/user-attachments/assets/839f1b6e-239e-42d8-94ff-4f16f21bf4b0" />
+
+
+
+
+
+
 | Label | Meaning |
 | --- | --- |
 | **Official** | Shipped by the DSH engine or identified as engine-owned. |
@@ -106,6 +114,14 @@ Manual classification is intentionally presentation-only:
 > Marking a third-party package as “Official” does not make it trusted and does not change whether it can be toggled, uninstalled, or protected.
 
 ## Lifecycle controls
+
+
+<img width="590" height="548" alt="image" src="https://github.com/user-attachments/assets/15ee582a-4c1d-4059-b156-53f867dc97e7" />
+
+
+
+
+
 
 ### Disable and enable
 
