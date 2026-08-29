@@ -92,6 +92,11 @@ pnpm dsh web
 
 管理器将自动判断结果与用户选择的展示分类分开保存。
 
+<img width="592" height="550" alt="Pasted image 20260830070553" src="https://github.com/user-attachments/assets/5272069d-3df9-4a69-b133-88878c4d89b6" />
+
+
+
+
 | 标签 | 含义 |
 | --- | --- |
 | **官方** | DSH 引擎自带或识别为引擎所有的插件。 |
@@ -108,6 +113,11 @@ pnpm dsh web
 ## 生命周期控制
 
 ### 停用与启用
+
+<img width="598" height="559" alt="image" src="https://github.com/user-attachments/assets/8a137170-7674-4ec4-917a-29bcde1d17c9" />
+
+
+
 
 对于 profile 根补丁空间内受支持的普通 Host 行，管理器会改写受管补丁块，等待 DSH 反映目标状态；如果无法验证结果，则恢复原始字节。
 
