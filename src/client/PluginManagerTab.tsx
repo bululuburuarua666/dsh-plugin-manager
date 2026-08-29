@@ -1,12 +1,25 @@
 /**
  * The Plugin manager tab: roster with origin badges, source filter, search,
- * detail rows, and lifecycle controls (disable/enable/uninstall with a
- * two-stage confirmation). All RPC flows through the strict client protocol;
- * every failure state renders explicit copy (never silent blanks).
+ * detail rows, lifecycle controls (disable/enable/uninstall with a
+ * two-stage confirmation), and the origin classification editor (manual
+ * override + restore-automatic). All RPC flows through the strict client
+ * protocol; every failure state renders explicit copy (never silent blanks).
+ *
+ * Origin overrides are display classifications only: they never change
+ * canToggle/canUninstall or any protected-package decision.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChannelCaller, ClientCapabilities, ClientEntry, ClientOperationView, ClientResult } from './protocol.ts'
-import { capabilities, execute, operation, preview } from './protocol.ts'
+import type {
+  ChannelCaller,
+  ClientCapabilities,
+  ClientEntry,
+  ClientOperationView,
+  ClientOrigin,
+  ClientOriginOverrideInput,
+  ClientOriginState,
+  ClientResult,
+} from './protocol.ts'
+import { capabilities, execute, operation, originState, originUpdate, preview } from './protocol.ts'
 import type { ManagerLocaleKey } from './locales.ts'
 
 /** Props injected by the slot registration. */
@@ -21,6 +34,24 @@ type RowLifecycle =
   | { readonly phase: 'working' }
   | { readonly phase: 'confirm-uninstall' }
   | { readonly phase: 'error'; readonly code: string }
+
+/** The editor's classification choices (customized splits opensource). */
+type OriginSelection = 'official' | 'personal' | 'opensource' | 'opensource-customized'
+
+/** One row's origin editor UI state. */
+type OriginEditor =
+  | { readonly phase: 'loading' }
+  | { readonly phase: 'error'; readonly code: string }
+  | {
+    readonly phase: 'open'
+    /** The originState snapshot the editor opened with (revision source). */
+    readonly base: ClientOriginState
+    readonly selection: OriginSelection
+    readonly note: string
+    /** Resolved error copy from the last save attempt, when any. */
+    readonly error: string | null
+    readonly saving: boolean
+  }
 
 const ERROR_KEY_BY_CODE: Readonly<Record<string, ManagerLocaleKey>> = {
   READ_ONLY_REMOTE: 'lifecycleErrorReadOnlyRemote',
@@ -40,6 +71,10 @@ const ERROR_KEY_BY_CODE: Readonly<Record<string, ManagerLocaleKey>> = {
   POSTCONDITION_FAILED: 'lifecycleErrorPostconditionFailed',
   TIMEOUT: 'lifecycleErrorTimeout',
   ROLLBACK_INCOMPLETE: 'lifecycleErrorRollbackIncomplete',
+  ORIGIN_CONFLICT: 'lifecycleErrorOriginConflict',
+  ORIGIN_FILE_INVALID: 'lifecycleErrorOriginFileInvalid',
+  ORIGIN_UNAVAILABLE: 'lifecycleErrorOriginUnavailable',
+  ORIGIN_NOTE_REQUIRED: 'originNoteRequired',
   INTERNAL: 'lifecycleErrorInternal',
   INCOMPATIBLE: 'channelIncompatible',
   PROTOCOL_INVALID: 'channelProtocolInvalid',
@@ -53,6 +88,57 @@ export function lifecycleErrorText(code: string, t: (key: ManagerLocaleKey) => s
   return key === undefined ? `${t('lifecycleErrorInternal')} (${code})` : t(key)
 }
 
+/** Display label of one origin: the kind, with the customized marker. */
+function originLabel(origin: ClientOrigin, t: (key: ManagerLocaleKey) => string): string {
+  if (origin.kind === 'opensource' && origin.customized) return t('sourceOpensourceCustomized')
+  return t(`source${origin.kind.charAt(0).toUpperCase()}${origin.kind.slice(1)}` as ManagerLocaleKey)
+}
+
+/** Initial editor selection from the effective origin. */
+function selectionOf(origin: ClientOrigin): OriginSelection {
+  if (origin.kind === 'opensource') return origin.customized ? 'opensource-customized' : 'opensource'
+  return origin.kind
+}
+
+/** Flatten a stored override note (string or bilingual pair) to one string. */
+export function noteTextOf(note: string | { zh: string; en: string } | null | undefined): string {
+  if (typeof note === 'string') return note
+  if (note === null || note === undefined) return ''
+  return note.zh !== '' ? note.zh : note.en
+}
+
+/**
+ * Build the originUpdate override payload for one editor state. A customized
+ * open-source classification without a note is rejected locally — the Host
+ * enforces the same rule, the local check just saves the round trip.
+ */
+export function overridePayload(
+  selection: OriginSelection,
+  note: string,
+): { readonly ok: true; readonly override: ClientOriginOverrideInput } | { readonly ok: false } {
+  const trimmed = note.trim()
+  if (selection === 'opensource-customized' && trimmed === '') return { ok: false }
+  const noteField = trimmed === '' ? null : trimmed
+  switch (selection) {
+    case 'official': return { ok: true, override: { kind: 'official', note: noteField } }
+    case 'personal': return { ok: true, override: { kind: 'personal', note: noteField } }
+    case 'opensource': return { ok: true, override: { kind: 'opensource', customized: false, note: noteField } }
+    case 'opensource-customized': return { ok: true, override: { kind: 'opensource', customized: true, note: trimmed } }
+  }
+}
+
+/** Radio label of one editor selection. */
+function selectionLabel(selection: OriginSelection, t: (key: ManagerLocaleKey) => string): string {
+  switch (selection) {
+    case 'official': return t('sourceOfficial')
+    case 'personal': return t('sourcePersonal')
+    case 'opensource': return t('sourceOpensource')
+    case 'opensource-customized': return t('sourceOpensourceCustomized')
+  }
+}
+
+const ORIGIN_SELECTIONS: readonly OriginSelection[] = ['official', 'personal', 'opensource', 'opensource-customized']
+
 export function PluginManagerTab({ rpc, t }: PluginManagerTabProps) {
   const [caps, setCaps] = useState<ClientCapabilities | null>(null)
   const [capsError, setCapsError] = useState<string | null>(null)
@@ -60,6 +146,7 @@ export function PluginManagerTab({ rpc, t }: PluginManagerTabProps) {
   const [sourceFilter, setSourceFilter] = useState<'all' | 'official' | 'personal' | 'opensource'>('all')
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [rowState, setRowState] = useState<ReadonlyMap<string, RowLifecycle>>(new Map())
+  const [originEditors, setOriginEditors] = useState<ReadonlyMap<string, OriginEditor>>(new Map())
   const [reloadNonce, setReloadNonce] = useState(0)
   const pollTimers = useRef(new Set<ReturnType<typeof setTimeout>>())
 
@@ -80,6 +167,28 @@ export function PluginManagerTab({ rpc, t }: PluginManagerTabProps) {
 
   const setRow = useCallback((entryId: string, state: RowLifecycle) => {
     setRowState(current => new Map(current).set(entryId, state))
+  }, [])
+
+  /** Set or clear (null) one row's origin editor state. */
+  const setEditor = useCallback((entryId: string, state: OriginEditor | null) => {
+    setOriginEditors(current => {
+      const next = new Map(current)
+      if (state === null) next.delete(entryId)
+      else next.set(entryId, state)
+      return next
+    })
+  }, [])
+
+  /** Patch the open editor of one row; a stale event leaves the map alone. */
+  const patchEditor = useCallback((entryId: string, patch: { selection?: OriginSelection; note?: string }) => {
+    setOriginEditors(current => {
+      const editor = current.get(entryId)
+      /* v8 ignore next -- the radios/textarea render only while the editor is open; this guards a stale event after close. */
+      if (editor?.phase !== 'open') return current
+      const next = new Map(current)
+      next.set(entryId, { ...editor, ...patch, error: null })
+      return next
+    })
   }, [])
 
   /** Poll one operation until terminal, then reload the roster. */
@@ -154,6 +263,55 @@ export function PluginManagerTab({ rpc, t }: PluginManagerTabProps) {
     })
   }, [rpc, caps, pollOperation])
 
+  /** Open the origin editor: fetch the live layers and revision first. */
+  const openOriginEditor = useCallback((entry: ClientEntry) => {
+    setEditor(entry.entryId, { phase: 'loading' })
+    void originState(rpc, entry.entryId).then(result => {
+      if (!result.ok) {
+        setEditor(entry.entryId, { phase: 'error', code: result.code })
+        return
+      }
+      setEditor(entry.entryId, {
+        phase: 'open',
+        base: result.value,
+        selection: selectionOf(result.value.effective),
+        note: noteTextOf(result.value.override?.note),
+        error: null,
+        saving: false,
+      })
+    })
+  }, [rpc, setEditor])
+
+  /** Submit an originUpdate: a classification override, or null to restore. */
+  const submitOrigin = useCallback((entry: ClientEntry, override: ClientOriginOverrideInput | null) => {
+    const editor = originEditors.get(entry.entryId)
+    /* v8 ignore next -- save/restore render only while the editor is open; this guards a stale click after close. */
+    if (editor?.phase !== 'open') return
+    setEditor(entry.entryId, { ...editor, saving: true, error: null })
+    void originUpdate(rpc, { entryId: entry.entryId, expectedOriginRevision: editor.base.originRevision, override }).then(result => {
+      if (!result.ok) {
+        setEditor(entry.entryId, { ...editor, saving: false, error: lifecycleErrorText(result.code, t) })
+        return
+      }
+      // Success: close the editor and reload so badges and filters refresh.
+      setEditor(entry.entryId, null)
+      setReloadNonce(nonce => nonce + 1)
+    })
+  }, [rpc, originEditors, setEditor, t])
+
+  /** Save the editor's current selection as the package's override. */
+  const saveOrigin = useCallback((entry: ClientEntry) => {
+    const editor = originEditors.get(entry.entryId)
+    /* v8 ignore next -- stale-click guard; see submitOrigin. */
+    if (editor?.phase !== 'open') return
+    const payload = overridePayload(editor.selection, editor.note)
+    if (!payload.ok) {
+      setEditor(entry.entryId, { ...editor, error: t('originNoteRequired') })
+      return
+    }
+    submitOrigin(entry, payload.override)
+  }, [originEditors, setEditor, submitOrigin, t])
+
   const rows = useMemo(() => {
     if (caps === null) return []
     const needle = search.trim().toLowerCase()
@@ -225,7 +383,7 @@ export function PluginManagerTab({ rpc, t }: PluginManagerTabProps) {
                     }}
                   >
                     <span data-origin-badge={`source-${entry.origin.kind}`}>
-                      {entry.origin.kind === 'opensource' && entry.origin.customized ? t('sourceOpensourceCustomized') : t(`source${entry.origin.kind.charAt(0).toUpperCase()}${entry.origin.kind.slice(1)}` as ManagerLocaleKey)}
+                      {originLabel(entry.origin, t)}{entry.origin.declaredBy === 'user-override' ? ` · ${t('originManual')}` : ''}
                     </span>
                     <span>{entry.title?.zh ?? entry.moduleName}</span>
                     <span data-enabled-tag>{entry.enabled ? t('enabledTag') : t('disabledTag')}</span>
@@ -236,12 +394,38 @@ export function PluginManagerTab({ rpc, t }: PluginManagerTabProps) {
                           <dl>
                             <dt>{t('module')}</dt><dd>{entry.moduleName}</dd>
                             <dt>{t('entryId')}</dt><dd>{entry.entryId}</dd>
+                            <dt>{t('originCurrent')}</dt><dd>{originLabel(entry.origin, t)}{entry.origin.declaredBy === 'user-override' ? ` · ${t('originManual')}` : ''}</dd>
+                            <dt>{t('originDetected')}</dt><dd>{originLabel(entry.detectedOrigin, t)}</dd>
                             <dt>{t('originBasis')}</dt><dd>{originBasisText(entry, t)}</dd>
                             {entry.origin.upstream === null ? null : <><dt>{t('upstream')}</dt><dd>{entry.origin.upstream}</dd></>}
                             {entry.origin.fork === null ? null : <><dt>{t('fork')}</dt><dd>{entry.origin.fork}</dd></>}
                             {entry.origin.branch === null ? null : <><dt>{t('branch')}</dt><dd>{entry.origin.branch}</dd></>}
+                            {entry.origin.note === null ? null : <><dt>{t('originNote')}</dt><dd>{entry.origin.note.zh}</dd></>}
                             {entry.description === null ? null : <><dt>{t('capability')}</dt><dd>{entry.description.zh}</dd></>}
                           </dl>
+                          {entry.packageName === null || originEditors.has(entry.entryId)
+                            ? null
+                            : (
+                                <button
+                                  type="button"
+                                  data-origin-action="edit"
+                                  disabled={readOnly}
+                                  onClick={() => { openOriginEditor(entry) }}
+                                >
+                                  {t('originEdit')}
+                                </button>
+                              )}
+                          <OriginEditorPanel
+                            entry={entry}
+                            editor={originEditors.get(entry.entryId)}
+                            readOnly={readOnly}
+                            t={t}
+                            onSelect={selection => { patchEditor(entry.entryId, { selection }) }}
+                            onNote={note => { patchEditor(entry.entryId, { note }) }}
+                            onSave={() => { saveOrigin(entry) }}
+                            onRestoreAuto={() => { submitOrigin(entry, null) }}
+                            onCancel={() => { setEditor(entry.entryId, null) }}
+                          />
                           <LifecycleControls
                             entry={entry}
                             state={rowState.get(entry.entryId) ?? { phase: 'idle' }}
@@ -274,6 +458,68 @@ function originBasisText(entry: ClientEntry, t: (key: ManagerLocaleKey) => strin
   if (entry.origin.declaredBy === 'user-override') return t('basisUserOverride')
   if (entry.origin.declaredBy === 'manifest') return t('basisManifest')
   return t('basisHeuristic')
+}
+
+/** The origin classification editor: loading, error, and open phases. */
+export function OriginEditorPanel(props: {
+  readonly entry: ClientEntry
+  readonly editor: OriginEditor | undefined
+  readonly readOnly: boolean
+  readonly t: (key: ManagerLocaleKey) => string
+  onSelect: (selection: OriginSelection) => void
+  onNote: (note: string) => void
+  onSave: () => void
+  onRestoreAuto: () => void
+  onCancel: () => void
+}) {
+  const { editor, readOnly, t } = props
+  if (editor === undefined) return null
+  if (editor.phase === 'loading') {
+    return <p data-origin-editor="loading" role="status">{t('lifecycleWorking')}</p>
+  }
+  if (editor.phase === 'error') {
+    return (
+      <div data-origin-editor="error">
+        <p role="alert">{lifecycleErrorText(editor.code, t)}</p>
+        <button type="button" data-origin-action="cancel" onClick={props.onCancel}>{t('lifecycleCancel')}</button>
+      </div>
+    )
+  }
+  return (
+    <fieldset data-origin-editor="open">
+      <legend>{t('originEditorTitle')}</legend>
+      <p>{t('originDetected')}: {originLabel(editor.base.detected, t)}</p>
+      {ORIGIN_SELECTIONS.map(option => (
+        <label key={option} data-origin-option={option}>
+          <input
+            type="radio"
+            name={`origin-edit-${props.entry.entryId}`}
+            checked={editor.selection === option}
+            disabled={editor.saving}
+            onChange={() => { props.onSelect(option) }}
+          />
+          {selectionLabel(option, t)}
+        </label>
+      ))}
+      {editor.selection === 'official' ? <p role="note">{t('originOfficialHint')}</p> : null}
+      <label>
+        {t('originNoteLabel')}
+        <textarea
+          rows={2}
+          value={editor.note}
+          placeholder={t('originNotePlaceholder')}
+          disabled={editor.saving}
+          onChange={event => { props.onNote(event.target.value) }}
+        />
+      </label>
+      {editor.error === null ? null : <p role="alert">{editor.error}</p>}
+      <button type="button" data-origin-action="save" disabled={editor.saving || readOnly} onClick={props.onSave}>{t('originSave')}</button>
+      {editor.base.override === null
+        ? null
+        : <button type="button" data-origin-action="restore-auto" disabled={editor.saving || readOnly} onClick={props.onRestoreAuto}>{t('originRestoreAuto')}</button>}
+      <button type="button" data-origin-action="cancel" disabled={editor.saving} onClick={props.onCancel}>{t('lifecycleCancel')}</button>
+    </fieldset>
+  )
 }
 
 /** Disable/enable/uninstall controls with the two-stage uninstall confirm. */

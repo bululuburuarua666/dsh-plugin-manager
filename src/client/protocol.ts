@@ -64,6 +64,7 @@ const entrySchema = z.strictObject({
   moduleName: z.string(),
   enabled: z.boolean(),
   origin: originSchema,
+  detectedOrigin: originSchema,
   title: z.strictObject({ zh: z.string(), en: z.string() }).nullable(),
   description: z.strictObject({ zh: z.string(), en: z.string() }).nullable(),
   packageName: z.string().nullable(),
@@ -105,6 +106,27 @@ const operationSchema = z.strictObject({
   action: z.enum(['disable', 'enable', 'uninstall']),
   errorCode: z.string().nullable(),
   restartRequired: z.boolean(),
+})
+
+/** One stored override entry as reported by originState/originUpdate. */
+const originOverrideSchema = z.strictObject({
+  kind: z.enum(['official', 'personal', 'opensource']),
+  customized: z.boolean().optional(),
+  upstream: z.string().nullable().optional(),
+  fork: z.string().nullable().optional(),
+  branch: z.string().nullable().optional(),
+  note: z.union([z.string(), z.strictObject({ zh: z.string(), en: z.string() })]).nullable().optional(),
+})
+
+/** originState / originUpdate success value: both origin layers + revision. */
+const originStateSchema = z.strictObject({
+  protocolVersion: protocolVersionLiteral,
+  entryId: z.string(),
+  packageName: z.string(),
+  detected: originSchema,
+  effective: originSchema,
+  override: originOverrideSchema.nullable(),
+  originRevision: z.string().min(1),
 })
 
 /** One manager endpoint call: transport → strict envelope → strict value parse. */
@@ -168,6 +190,20 @@ export function operation(rpc: ChannelCaller, operationId: string, signal?: Abor
   return call(rpc, 'operation', { operationId }, operationSchema, signal)
 }
 
+/** originState: describe one entry's detected/effective origins + revision. */
+export function originState(rpc: ChannelCaller, entryId: string, signal?: AbortSignal): Promise<ClientResult<z.infer<typeof originStateSchema>>> {
+  return call(rpc, 'originState', { entryId }, originStateSchema, signal)
+}
+
+/** originUpdate: set (`override`) or clear (null) one package's override. */
+export function originUpdate(
+  rpc: ChannelCaller,
+  request: { entryId: string; expectedOriginRevision: string; override: ClientOriginOverrideInput | null },
+  signal?: AbortSignal,
+): Promise<ClientResult<z.infer<typeof originStateSchema>>> {
+  return call(rpc, 'originUpdate', request, originStateSchema, signal)
+}
+
 // Client-side view types (schema-inferred, kept named for the UI).
 export type ClientOrigin = z.infer<typeof originSchema>
 export type ClientEntry = z.infer<typeof entrySchema>
@@ -175,3 +211,11 @@ export type ClientCapabilities = z.infer<typeof capabilitiesSchema>
 export type ClientPreview = z.infer<typeof previewSchema>
 export type ClientExecuteResponse = z.infer<typeof executeSchema>
 export type ClientOperationView = z.infer<typeof operationSchema>
+export type ClientOriginState = z.infer<typeof originStateSchema>
+
+/** Override payload accepted by originUpdate (note as one zh string). */
+export interface ClientOriginOverrideInput {
+  readonly kind: 'official' | 'personal' | 'opensource'
+  readonly customized?: boolean
+  readonly note?: string | null
+}

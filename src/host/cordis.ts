@@ -8,9 +8,18 @@
 /** Loader entry as consumed by the roster reader. */
 export interface LoaderEntry {
   readonly id: string
-  readonly options: { readonly name: string; readonly group?: unknown }
+  readonly options: {
+    readonly name: string
+    /** The row's own data id inside the composed entry list, when declared. */
+    readonly id?: unknown
+    readonly group?: unknown
+  }
   readonly disabled: boolean
   readonly fiber?: { readonly state: number } | undefined
+  /** Present when the row is an include/tree carrier (a composition container). */
+  readonly subtree?: unknown
+  /** Present when the row is a group carrier. */
+  readonly subgroup?: unknown
 }
 
 /** Loader context face. */

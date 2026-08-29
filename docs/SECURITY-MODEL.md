@@ -40,8 +40,9 @@ The plugin never re-implements trust decisions; it cannot weaken them.
 - Pre-cancelled requests → `CANCELLED`; an `execute` acknowledged before
   cancellation always runs to completion (no half-transactions).
 
-The browser only ever submits an `entryId` plus an `action`; every path,
-package spec, and command is re-derived Host-side.
+The browser only ever submits an `entryId` plus an `action` (the origin
+override endpoints additionally submit classification fields and a
+revision); every path, package spec, and command is re-derived Host-side.
 
 ## 3. Uninstall authorization — six gates, all mandatory
 
@@ -58,7 +59,30 @@ An entry is uninstallable only when **all** hold:
 
 Anything uncertain fails closed.
 
-## 4. Transaction semantics
+## 4. Origin override writes — display classification only
+
+The `originState` / `originUpdate` endpoints maintain
+`plugin-origins.json`:
+
+- Overrides are keyed by the **stable package name**, re-derived Host-side
+  from the `entryId`; the browser never submits a bare package name.
+  `cordis:` builtins and unresolvable entries refuse editing
+  (`ORIGIN_UNAVAILABLE`).
+- Write pipeline: cross-process file lock → in-lock re-read → revision
+  conflict check (`ORIGIN_CONFLICT`) → strict schema validation → atomic
+  write → post-write verification.
+- An existing corrupt file is **preserved untouched and reported**
+  (`ORIGIN_FILE_INVALID`), never replaced by an empty configuration.
+- "Open source · Customized" must carry a customization note
+  (`ORIGIN_NOTE_REQUIRED`), enforced Host-side.
+- Overrides **affect display and filtering only**: `canToggle`,
+  `canUninstall`, engine-owned, and protected-package decisions never read
+  the override file; a manual "Official" mark grants no official trust or
+  extra permissions.
+- Read-only deployments (all-interfaces bind) refuse `originUpdate`
+  (`READ_ONLY_REMOTE`).
+
+## 5. Transaction semantics
 
 `preview → execute → operation` with:
 
@@ -73,7 +97,7 @@ Anything uncertain fails closed.
   hash-guarded rollback; anything undeletable becomes a pending-removal
   record settled idempotently on the next startup.
 
-## 5. Diagnostics hygiene
+## 6. Diagnostics hygiene
 
 Errors crossing the wire carry codes and sanitized messages only — no
 paths, no stack traces, no environment. Server-side diagnostics log the

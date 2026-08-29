@@ -10,7 +10,7 @@ export type PluginLifecyclePersistence = 'writable' | 'read-only';
 /** Why a capability is denied, localized by the client. */
 export type PluginLifecycleBlockReason = 'read-only-remote' | 'protected-plugin' | 'engine-owned' | 'template-bundle' | 'not-direct-dependency' | 'ambiguous-package' | 'manual-insert-unsupported';
 /** Structured failure codes every mutation path may raise. */
-export type PluginLifecycleErrorCode = 'READ_ONLY_REMOTE' | 'ENTRY_NOT_FOUND' | 'ENTRY_CHANGED' | 'BLOCKED_BY_ANCESTOR' | 'PROTECTED_PLUGIN' | 'NOT_DIRECT_DEPENDENCY' | 'AMBIGUOUS_PACKAGE' | 'PROFILE_CHANGED' | 'BUSY' | 'INVALID_PATCH' | 'MANAGED_BLOCK_INVALID' | 'UNSUPPORTED_PATCH_SHAPE' | 'PNPM_UNAVAILABLE' | 'PACKAGE_MANAGER_FAILED' | 'POSTCONDITION_FAILED' | 'TIMEOUT' | 'ROLLBACK_INCOMPLETE' | 'INTERNAL';
+export type PluginLifecycleErrorCode = 'READ_ONLY_REMOTE' | 'ENTRY_NOT_FOUND' | 'ENTRY_CHANGED' | 'BLOCKED_BY_ANCESTOR' | 'PROTECTED_PLUGIN' | 'NOT_DIRECT_DEPENDENCY' | 'AMBIGUOUS_PACKAGE' | 'PROFILE_CHANGED' | 'BUSY' | 'INVALID_PATCH' | 'MANAGED_BLOCK_INVALID' | 'UNSUPPORTED_PATCH_SHAPE' | 'PNPM_UNAVAILABLE' | 'PACKAGE_MANAGER_FAILED' | 'POSTCONDITION_FAILED' | 'TIMEOUT' | 'ROLLBACK_INCOMPLETE' | 'ORIGIN_CONFLICT' | 'ORIGIN_FILE_INVALID' | 'ORIGIN_UNAVAILABLE' | 'ORIGIN_NOTE_REQUIRED' | 'INTERNAL';
 /** Per-entry capability row inside {@link PluginLifecycleCapabilities}. */
 export interface PluginLifecycleEntryCapability {
     readonly entryId: string;

@@ -12,8 +12,10 @@ import { fileURLToPath } from 'node:url'
 import { writeFileAtomic, withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import {
   applyManagedToggleRows,
-  dataIdOf,
+  patchTargetIdOf,
   readManagedToggleRows,
+  ROOT_INCLUDE_ID,
+  treeIdOfPatchTarget,
   type ManagedToggleRow,
 } from './patch-editor.ts'
 import {
@@ -170,8 +172,21 @@ export class LifecycleEngine {
         throw lifecycleFailure('MANAGED_BLOCK_INVALID', current.message)
       }
       if (current !== null) {
-        const settledDataIds = settled.flatMap(record => record.entryIds).map(dataIdOf)
-        const kept = current.rows.filter(row => !settledDataIds.includes(row.entryId))
+        // Managed rows are keyed by patch-space data ids while pending
+        // records carry loader tree ids; compare against both spellings of
+        // each id (strict root-space strip only — nested subtree ids never
+        // had addressable rows).
+        const settledIds = new Set<string>()
+        const prefix = `${ROOT_INCLUDE_ID}:`
+        for (const record of settled) {
+          for (const id of record.entryIds) {
+            settledIds.add(id)
+            if (id.startsWith(prefix) && !id.slice(prefix.length).includes(':')) {
+              settledIds.add(id.slice(prefix.length))
+            }
+          }
+        }
+        const kept = current.rows.filter(row => !settledIds.has(row.entryId))
         const rewritten = applyManagedToggleRows(patchBefore, kept)
         if (!rewritten.ok) throw lifecycleFailure(rewritten.code, rewritten.message)
         await writeFileAtomic(patchPath, rewritten.content, { mode: 0o600 })
@@ -219,17 +234,40 @@ export class LifecycleEngine {
         'the package may not be uninstalled through this surface',
       )
     }
-    const affectedEntryIds = request.action === 'uninstall'
+    if (request.action !== 'uninstall' && !capability.canToggle) {
+      // Toggles are denied for read-only surfaces, rows outside the profile's
+      // root patch space (no addressable data id), and protected
+      // infrastructure rows.
+      throw lifecycleFailure(
+        /* v8 ignore next -- the capability layer always pairs canToggle=false with a block reason. */
+        blockReasonToCode(capability.toggleBlockReason ?? 'not-direct-dependency'),
+        'the entry may not be toggled through this surface',
+      )
+    }
+    const evidenceEntry = bundle.entries.find(entry => entry.entryId === request.entryId)
+    const affected = request.action === 'uninstall'
       ? bundle.entries
         .filter(entry => entry.packageName !== null && entry.packageName === capability.packageName)
-        .map(entry => entry.entryId)
+      : []
+    // canUninstall already gates out packages with any non-root-space entry
+    // (the capabilities package-group pass), so every affected data id is
+    // present by construction.
+    const affectedDataIds: string[] = affected.map(entry => entry.patchTargetId as string)
+    const affectedEntryIds = affected.length > 0
+      ? affected.map(entry => entry.entryId)
       : [request.entryId]
+    if (affected.length === 0 && evidenceEntry !== undefined && evidenceEntry.patchTargetId !== null) {
+      affectedDataIds.push(evidenceEntry.patchTargetId)
+    }
     const restartRequired = request.action === 'uninstall'
     const issued = this.tokens.issue({
       action: request.action,
       entryId: request.entryId,
+      /* v8 ignore next -- the capability lookup above guarantees the entry exists; the ?? arm is defensive. */
+      patchTargetId: evidenceEntry?.patchTargetId ?? null,
       packageName: capability.packageName,
       affectedEntryIds,
+      affectedDataIds,
       restartRequired,
       revision: bundle.revision,
     })
@@ -262,28 +300,64 @@ export class LifecycleEngine {
       throw lifecycleFailure('ENTRY_NOT_FOUND', 'the entry left the Loader tree since the preview')
     }
     const operationId = this.operations.create(binding.action)
-    this.operations.update(operationId, { state: 'running' })
     // The task starts only when it reaches the front of the per-profile
     // queue; a Promise here would already be running (JS promises are
     // eager), so pass a thunk and re-derive evidence inside it.
     void this.enqueue(bundle.profileDir, () => {
       // Re-validate at execution time: a queued operation must not act on
-      // the snapshot taken when execute() was called.
+      // the snapshot taken when execute() was called. Every bound evidence
+      // field is recomputed and compared; any drift fails with zero writes.
+      this.operations.update(operationId, { state: 'running' })
       const queued = this.evidence()
-      if (queued.persistence !== 'writable') {
-        this.operations.update(operationId, { state: 'failed', errorCode: 'READ_ONLY_REMOTE' })
+      const fail = (errorCode: PluginLifecycleErrorCode): Promise<void> => {
+        this.operations.update(operationId, { state: 'failed', errorCode })
         return Promise.resolve()
       }
-      if (queued.revision !== binding.revision) {
-        this.operations.update(operationId, { state: 'failed', errorCode: 'PROFILE_CHANGED' })
-        return Promise.resolve()
+      if (queued.persistence !== 'writable') return fail('READ_ONLY_REMOTE')
+      if (queued.revision !== binding.revision) return fail('PROFILE_CHANGED')
+      const queuedCapability = queued.capabilities.find(entry => entry.entryId === binding.entryId)
+      /* v8 ignore next -- capabilities and entries derive from one evidence pass; a missing row also flips the revision, which the check above already refused. */
+      if (queuedCapability === undefined) return fail('ENTRY_NOT_FOUND')
+      if (binding.action === 'uninstall' && !queuedCapability.canUninstall) {
+        /* v8 ignore next -- the capability layer always pairs denials with a reason. */
+        return fail(blockReasonToCode(queuedCapability.uninstallBlockReason ?? 'not-direct-dependency'))
       }
+      /* v8 ignore next -- a toggle denial here requires a capability flip WITHOUT a revision flip; every capability input feeds the revision digest, so the PROFILE_CHANGED check above fires first. */
+      if (binding.action !== 'uninstall' && !queuedCapability.canToggle) {
+        /* v8 ignore next -- the capability layer always pairs denials with a reason. */
+        return fail(blockReasonToCode(queuedCapability.toggleBlockReason ?? 'not-direct-dependency'))
+      }
+      // Full binding re-derivation: packageName, patch data id, and the
+      // same-package affected sets must be byte-identical, because the
+      // revision digest does not cover node_modules resolution drift.
+      const queuedEntry = queued.entries.find(entry => entry.entryId === binding.entryId)
+      /* v8 ignore next -- same evidence pass as the capability lookup above; a vanished entry also flips the revision, which the check above already refused. */
+      if (queuedEntry === undefined) return fail('ENTRY_NOT_FOUND')
+      // packageName comes from node_modules resolution, which the revision
+      // digest does NOT cover — a removed link must fail here without any write.
+      if ((queuedEntry.packageName ?? null) !== binding.packageName) return fail('PROFILE_CHANGED')
+      /* v8 ignore next -- patchTargetId is digested per-entry by computeRevision; drift flips the revision first. */
+      if (queuedEntry.patchTargetId !== binding.patchTargetId) return fail('PROFILE_CHANGED')
+      const queuedAffected = binding.action === 'uninstall'
+        ? queued.entries
+          .filter(entry => entry.packageName !== null && entry.packageName === binding.packageName)
+        : [queuedEntry]
+      const queuedEntryIds = queuedAffected.map(entry => entry.entryId).sort()
+      const queuedDataIds = queuedAffected
+        .map(entry => entry.patchTargetId)
+        .sort()
+      const boundEntryIds = [...binding.affectedEntryIds].sort()
+      const boundDataIds = [...binding.affectedDataIds].sort()
+      /* v8 ignore next -- membership derives from entryId (digested) and packageName; any drift fails the packageName check or the revision check above first. */
+      if (queuedEntryIds.join('\0') !== boundEntryIds.join('\0')) return fail('PROFILE_CHANGED')
+      /* v8 ignore next -- same reasoning: the data-id set derives from the digested patchTargetId plus packageName membership. */
+      if (queuedDataIds.join('\0') !== boundDataIds.join('\0')) return fail('PROFILE_CHANGED')
       const task = binding.action === 'uninstall'
         ? this.runUninstall(operationId, binding, queued)
         : this.runToggle(operationId, binding, queued)
       return task
     })
-    return { operationId, state: 'running' }
+    return { operationId, state: 'queued' }
   }
 
   /** Poll one operation's state. */
@@ -318,13 +392,19 @@ export class LifecycleEngine {
   private entryFacts(): LifecycleEntryFacts[] {
     const facts: LifecycleEntryFacts[] = []
     for (const entry of this.host.entries()) {
-      const options = entry.options as { name: string; group?: unknown; disabled?: unknown }
-      if (options.group !== undefined && options.group !== null && options.group !== false) continue
+      const options = entry.options as { name: string; id?: unknown; group?: unknown; disabled?: unknown }
+      // Group rows and include/tree-carrier rows are composition containers,
+      // not toggleable plugins. `subtree`/`subgroup` are Entry-level fields.
+      const isCarrier = (options.group !== undefined && options.group !== null && options.group !== false)
+        || entry.subtree !== undefined
+        || entry.subgroup !== undefined
+      if (isCarrier) continue
       facts.push({
         entryId: entry.id,
         moduleName: options.name,
         disabled: entry.disabled,
         ownDisabled: Boolean(options.disabled),
+        patchTargetId: patchTargetIdOf(entry.id, options.id),
       })
     }
     return facts
@@ -362,6 +442,28 @@ export class LifecycleEngine {
       lockfile: fileDigest(lockfilePath),
       patch: fileDigest(patchPath),
     }, facts)
+    // Package-group fail-closed for uninstall: if any entry of a package
+    // lives outside the root patch space, NO entry of that package offers
+    // uninstall — the patch-disable step cannot be expressed for the group.
+    const packageHasNonRootEntry = new Set<string>()
+    for (const entry of entries) {
+      if (entry.packageName !== null && entry.patchTargetId === null) {
+        packageHasNonRootEntry.add(entry.packageName)
+      }
+    }
+    const capabilities = entries
+      .map(entry => capabilityOf(entry, persistence))
+      .map((row, index) => {
+        const entry = entries[index] as LifecycleEntryEvidence
+        if (row.canUninstall && entry.packageName !== null && packageHasNonRootEntry.has(entry.packageName)) {
+          return {
+            ...row,
+            canUninstall: false,
+            uninstallBlockReason: 'not-direct-dependency' as const,
+          }
+        }
+        return row
+      })
     return {
       profileDir,
       profileName,
@@ -371,7 +473,7 @@ export class LifecycleEngine {
       revision,
       persistence,
       entries,
-      capabilities: entries.map(entry => capabilityOf(entry, persistence)),
+      capabilities,
     }
   }
 
@@ -387,6 +489,16 @@ export class LifecycleEngine {
     bundle: ProfileEvidenceBundle,
   ): Promise<void> {
     const disable = binding.action === 'disable'
+    // Managed rows are keyed by the PATCH-space data id — the id an
+    // id-targeted patch matches inside the composed entry list. The token
+    // binds it at preview; the capability layer already refused entries with
+    // no addressable data id, so a null here is defensive only.
+    const bindingDataId = binding.patchTargetId
+    /* v8 ignore next -- capabilityOf/preview refuse patchTargetId===null before a token can be issued. */
+    if (bindingDataId === null) {
+      this.operations.update(operationId, { state: 'failed', errorCode: 'UNSUPPORTED_PATCH_SHAPE' })
+      return
+    }
     const state = { wrote: false, keepRow: false, beforeText: '', afterHash: '' }
     try {
       await withFileLock(bundle.patchPath, async () => {
@@ -395,7 +507,6 @@ export class LifecycleEngine {
         if (current !== null && !current.ok) {
           throw lifecycleFailure('MANAGED_BLOCK_INVALID', current.message)
         }
-        const bindingDataId = dataIdOf(binding.entryId)
         const rows: ManagedToggleRow[] = (current === null ? [] : current.rows)
           .filter(row => row.entryId !== bindingDataId)
         rows.push({ entryId: bindingDataId, disabled: disable })
@@ -447,11 +558,23 @@ export class LifecycleEngine {
     bundle: ProfileEvidenceBundle,
   ): Promise<void> {
     const packageName = binding.packageName
+    /* v8 ignore next -- canUninstall (checked at preview and dequeue) implies a non-null packageName. */
     if (packageName === null) {
       this.operations.update(operationId, { state: 'failed', errorCode: 'NOT_DIRECT_DEPENDENCY' })
       return
     }
     const affected = bundle.entries.filter(entry => entry.packageName === packageName)
+    // The patch step addresses rows by their data ids; every affected entry
+    // must live in the root patch space or the disable cannot be expressed.
+    const affectedDataIds: string[] = []
+    for (const entry of affected) {
+      /* v8 ignore next -- canUninstall gates patchTargetId===null for every entry of the package. */
+      if (entry.patchTargetId === null) {
+        this.operations.update(operationId, { state: 'failed', errorCode: 'UNSUPPORTED_PATCH_SHAPE' })
+        return
+      }
+      affectedDataIds.push(entry.patchTargetId)
+    }
     const backupsRoot = join(dirname(dirname(bundle.profileDir)), 'dsh-plugin-manager-backups', bundle.profileName)
     const outcome = await runUninstallTransaction({
       operationId,
@@ -467,11 +590,14 @@ export class LifecycleEngine {
       backupsRoot,
       pendingPath: join(bundle.profileDir, 'dsh-plugin-manager-pending-removals.json'),
       affectedEntryIds: affected.map(entry => entry.entryId),
+      affectedDataIds,
       moduleNames: affected.map(entry => entry.moduleName),
       io: this.fileIo(),
       runner: this.createPackageRunner(),
       waitForDispose: async (ids) => { await this.awaitDisposal(ids) },
-      probeEntryIds: ids => this.presentEntryIds(ids),
+      // Spliced and remaining ids arrive in patch-space; probe the Loader in
+      // tree-id space and report surviving tree ids for the pending record.
+      probeEntryIds: ids => this.presentEntryIds(ids.map(treeIdOfPatchTarget)),
       withPatchLock: operation => withFileLock(bundle.patchPath, operation, { waitMs: 30_000 }),
     })
     if (outcome.ok) {

@@ -32,12 +32,34 @@ export interface ManagedToggleRow {
 }
 
 /**
- * Translate a loader tree entry id into the patch-layer data id it targets
- * (the last `:`-segment; ids without a colon are their own data id).
+ * The pinned id of the root Include entry (`mountRootInclude` in upstream
+ * `dsh-app-boot`). Loader tree ids of rows inside the profile's root patch
+ * space are exactly `include:<dataId>`; only that single-segment shape is
+ * addressable by an id-targeted patch in `cordis.patch.yml`.
  */
-export function dataIdOf(entryId: string): string {
-  const cut = entryId.lastIndexOf(':')
-  return cut === -1 ? entryId : entryId.slice(cut + 1)
+export const ROOT_INCLUDE_ID = 'include'
+
+/**
+ * Strict tree-id → data-id mapping: non-null only when the row's declared
+ * data id composes back to the exact tree id (`include:<optionsId>`). Rows in
+ * nested subtrees (agent preset realms, `include:preset:foo`), loader-root
+ * rows without the prefix, and rosters that do not declare `options.id` have
+ * no addressable data id — an id-targeted patch can never reach them. No
+ * shape-based fallback: guessing from the tree id alone would re-introduce
+ * the cross-space collision the strict check exists to prevent.
+ */
+export function patchTargetIdOf(treeId: string, optionsId: unknown): string | null {
+  if (typeof optionsId !== 'string' || optionsId.length === 0) return null
+  return treeId === `${ROOT_INCLUDE_ID}:${optionsId}` ? optionsId : null
+}
+
+/**
+ * One-way data-id → tree-id mapping for Loader-space probes. Unconditional:
+ * a legitimate data id may itself contain `:` segments, so never try to be
+ * clever about already-prefixed inputs — callers here always hold data ids.
+ */
+export function treeIdOfPatchTarget(dataId: string): string {
+  return `${ROOT_INCLUDE_ID}:${dataId}`
 }
 
 /** Editor failure codes surfaced as lifecycle error codes. */
@@ -204,6 +226,12 @@ export function applyManagedToggleRows(source: string, rows: readonly ManagedTog
     next = rows.length === 0
       ? [...body.slice(0, begin), ...body.slice(end + 1)]
       : [...body.slice(0, begin), ...blockLines, ...body.slice(end + 1)]
+    if (rows.length === 0 && next.every(line => line.trim().length === 0 || line.trimStart().startsWith('#'))) {
+      // Removing the last managed row left a comments-only document (or an
+      // empty one): a null/absent patch list is INVALID for the boot path —
+      // re-emit the `[]` empty flow root so the layer stays loadable.
+      next = [...next, '[]']
+    }
   }
 
   const joined = next.join(style.newline)

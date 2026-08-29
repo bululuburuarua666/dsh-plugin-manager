@@ -6,6 +6,12 @@
 import type { PluginLifecycleEntryCapability } from './engine-types.ts';
 /** Packages that may never be uninstalled through this surface. */
 export declare const PROTECTED_PACKAGES: readonly string[];
+/**
+ * Root-space row ids whose toggling would break the machinery this surface
+ * depends on: the HMR fallback the upstream launcher mounts after boot, its
+ * timer dependency, and the manager's own row.
+ */
+export declare const PROTECTED_TOGGLE_ENTRY_IDS: readonly string[];
 /** Loader-entry facts the evidence layer consumes. */
 export interface LifecycleEntryFacts {
     readonly entryId: string;
@@ -14,6 +20,14 @@ export interface LifecycleEntryFacts {
     readonly disabled: boolean;
     /** The entry's own (not ancestor-inherited) disabled flag. */
     readonly ownDisabled: boolean;
+    /**
+     * The PATCH-space data id this entry is addressed by inside the profile's
+     * user patch layer — the bare composed row `id`. Null when the entry lives
+     * outside the root include's patch space (a nested subtree, e.g. an agent
+     * preset realm, or a loader-root-level row), meaning no id-targeted patch
+     * can reach it.
+     */
+    readonly patchTargetId: string | null;
 }
 /** A profile manifest's dependency and bundle-membership view. */
 export interface ProfileManifestView {
@@ -38,6 +52,8 @@ export interface LifecycleEntryEvidence {
     readonly moduleName: string;
     readonly disabled: boolean;
     readonly ownDisabled: boolean;
+    /** PATCH-space data id, or null outside the root include's patch space. */
+    readonly patchTargetId: string | null;
     readonly packageName: string | null;
     readonly isDirectDependency: boolean;
     readonly isBundleMember: boolean;
@@ -76,9 +92,12 @@ export declare function createEvidenceSession(profileDir: string, manifest: Prof
 /** Assemble one entry's evidence from profile files and resolution facts. */
 export declare function buildEntryEvidence(facts: LifecycleEntryFacts, context: EvidenceSession): LifecycleEntryEvidence;
 /**
- * Compute one entry's capability row. Toggle is available to every known
- * entry on a writable surface; uninstall additionally requires an exact
- * direct-dependency mapping outside every protected class.
+ * Compute one entry's capability row. Toggle requires the entry to be
+ * addressable by an id-targeted patch in the profile's user patch layer (a
+ * root-space data id) and not be lifecycle-critical infrastructure; uninstall
+ * additionally requires an exact direct-dependency mapping outside every
+ * protected class. A row outside the root patch space cannot be reached by
+ * any patch, so neither action is offered for it.
  */
 export declare function capabilityOf(evidence: LifecycleEntryEvidence, persistence: 'writable' | 'read-only'): PluginLifecycleEntryCapability;
 /** Hash a file's content for revision purposes; missing files hash as '-'. */

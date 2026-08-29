@@ -4,8 +4,13 @@ import type { PluginLifecycleAction } from './engine-types.ts';
 export interface PluginLifecycleTokenBinding {
     readonly action: PluginLifecycleAction;
     readonly entryId: string;
+    /** PATCH-space data id for managed rows; null only for non-toggle flows. */
+    readonly patchTargetId: string | null;
     readonly packageName: string | null;
+    /** Same-package entry ids (loader tree ids) affected by the action. */
     readonly affectedEntryIds: readonly string[];
+    /** The same entries' patch-space data ids, positionally aligned. */
+    readonly affectedDataIds: readonly string[];
     readonly restartRequired: boolean;
     /** Evidence revision the preview was computed against. */
     readonly revision: string;

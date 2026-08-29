@@ -13,8 +13,8 @@ export const REQUEST_BODY_MAX_BYTES = 64 * 1024
 /** The channel every RPC flows through, pinned to loopback authority. */
 export const MANAGER_CHANNEL = '/dsh-plugin-manager'
 
-/** The four endpoints this channel serves; nothing else is routed. */
-export const MANAGER_ENDPOINTS = ['capabilities', 'preview', 'execute', 'operation'] as const
+/** The six endpoints this channel serves; nothing else is routed. */
+export const MANAGER_ENDPOINTS = ['capabilities', 'preview', 'execute', 'operation', 'originState', 'originUpdate'] as const
 export type ManagerEndpoint = typeof MANAGER_ENDPOINTS[number]
 
 /** Strict object schema factory: no unknown fields survive. */
@@ -46,6 +46,41 @@ export const operationRequestSchema = strict({
   operationId: z.string().min(1).max(128),
 })
 
+/** originState request: the entry whose origin layers to describe. */
+export const originStateRequestSchema = strict({
+  protocolVersion,
+  entryId: z.string().min(1).max(256),
+})
+
+/**
+ * Wire shape of one origin override entry: the `plugin-origins.json` entry
+ * schema, strict (unknown fields reject). An explicit `null` on an optional
+ * field clears the inherited value during the merge.
+ */
+export const originOverrideWireSchema = strict({
+  kind: z.enum(['official', 'personal', 'opensource']),
+  customized: z.boolean().optional(),
+  upstream: z.string().max(2_048).nullish(),
+  fork: z.string().max(2_048).nullish(),
+  branch: z.string().max(200).nullish(),
+  note: z.union([
+    z.string().max(1_000),
+    strict({ zh: z.string().max(1_000), en: z.string().max(1_000) }),
+  ]).nullish(),
+})
+
+/**
+ * originUpdate request: set (`override`) or clear (`null` → restore
+ * automatic detection) the classification of the entry's package. The
+ * revision binds the write to the file state the user saw.
+ */
+export const originUpdateRequestSchema = strict({
+  protocolVersion,
+  entryId: z.string().min(1).max(256),
+  expectedOriginRevision: z.string().min(1).max(128),
+  override: originOverrideWireSchema.nullable(),
+})
+
 /** Response envelope: ok value or structured error; unknown fields dropped client-side by schema. */
 export const managerErrorSchema = strict({
   code: z.string().min(1).max(64),
@@ -61,7 +96,9 @@ export function parseManagerRequest(
     = endpoint === 'capabilities' ? capabilitiesRequestSchema
       : endpoint === 'preview' ? previewRequestSchema
         : endpoint === 'execute' ? executeRequestSchema
-          : operationRequestSchema
+          : endpoint === 'operation' ? operationRequestSchema
+            : endpoint === 'originState' ? originStateRequestSchema
+              : originUpdateRequestSchema
   const parsed = schema.safeParse(payload)
   if (parsed.success) return { ok: true, value: parsed.data as Record<string, unknown> }
   const first = parsed.error.issues[0]

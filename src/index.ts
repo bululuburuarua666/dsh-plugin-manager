@@ -9,7 +9,8 @@
  * authority — the official Host trust fence runs before any handler code.
  */
 import { LifecycleEngine, type EngineHost } from './host/engine.ts'
-import { InventoryAssembler } from './host/inventory.ts'
+import { InventoryAssembler, profileDirOf, type OriginDescription } from './host/inventory.ts'
+import { OriginStore } from './host/origin-store.ts'
 import {
   MANAGER_CHANNEL,
   MANAGER_ENDPOINTS,
@@ -18,7 +19,8 @@ import {
   type ManagerEndpoint,
 } from './host/channel-protocol.ts'
 import { PROTOCOL_VERSION } from './host/protocol.ts'
-import { ManagerFailure } from './host/failure.ts'
+import { ManagerFailure, managerFailure } from './host/failure.ts'
+import type { PluginOriginOverrideEntry } from './host/origin.ts'
 import type { LoaderEntry } from './host/cordis.ts'
 
 export { MANAGER_CHANNEL, MANAGER_ENDPOINTS, PROTOCOL_VERSION }
@@ -49,12 +51,15 @@ interface PluginContext {
   effect(fn: () => unknown, label?: string): unknown
 }
 
-/** Non-group roster rows shaped for the inventory assembler. */
+/** Non-group, non-carrier roster rows shaped for the inventory assembler. */
 function rosterRows(iterable: Iterable<LoaderEntry>): Array<{ entryId: string; moduleName: string; disabled: boolean }> {
   const rows: Array<{ entryId: string; moduleName: string; disabled: boolean }> = []
   for (const entry of iterable) {
     const options = entry.options as LoaderEntry['options']
+    // Group rows and include/tree-carrier rows are composition containers,
+    // not plugins; keep the roster in parity with the engine's entry facts.
     if (options.group !== undefined && options.group !== null && options.group !== false) continue
+    if (entry.subtree !== undefined || entry.subgroup !== undefined) continue
     rows.push({ entryId: entry.id, moduleName: options.name, disabled: entry.disabled })
   }
   return rows
@@ -81,6 +86,7 @@ export default {
     }
     const engine = new LifecycleEngine(baseUrl, host)
     const inventory = new InventoryAssembler(baseUrl)
+    const origins = new OriginStore(profileDirOf(baseUrl))
 
     // Startup cleanup: settled pending removals are pruned idempotently.
     /* v8 ignore start -- the catch arm needs the lock creation itself to fail (e.g. a read-only profile directory), which Windows CI cannot stage reliably; POSIX CI covers it. */
@@ -100,7 +106,7 @@ export default {
       }
       const dispose = rpc.handle(
         MANAGER_CHANNEL,
-        (endpoint, payload, signal) => managerHandler(engine, inventory, entries, endpoint, payload, signal, connectionCtx.logger),
+        (endpoint, payload, signal) => managerHandler(engine, inventory, origins, entries, persistence, endpoint, payload, signal, connectionCtx.logger),
         { authority: 'loopback' },
       )
       // rpc.handle() already owns its route through the CALLER's effect
@@ -122,7 +128,9 @@ export default {
 async function managerHandler(
   engine: LifecycleEngine,
   inventory: InventoryAssembler,
+  origins: OriginStore,
   entries: () => Iterable<LoaderEntry>,
+  persistence: () => 'writable' | 'read-only',
   endpoint: string,
   payload: unknown,
   signal: AbortSignal,
@@ -185,6 +193,33 @@ async function managerHandler(
         const value = engine.operation({ operationId: request.value.operationId as string })
         return { ok: true, value: { protocolVersion: PROTOCOL_VERSION, ...value } }
       }
+      case 'originState': {
+        const description = describeRequestOrigin(inventory, entries, request.value.entryId as string)
+        return {
+          ok: true,
+          value: originStateValue(request.value.entryId as string, description, origins.revision()),
+        }
+      }
+      case 'originUpdate': {
+        // Origin overrides are display classifications only — they never
+        // feed canToggle/canUninstall/protected decisions — but they still
+        // write a profile file, so a read-only deployment refuses them.
+        if (persistence() !== 'writable') {
+          throw managerFailure('READ_ONLY_REMOTE', 'this deployment serves read-only clients')
+        }
+        const description = describeRequestOrigin(inventory, entries, request.value.entryId as string)
+        await origins.update(
+          description.packageName,
+          request.value.override as PluginOriginOverrideEntry | null,
+          request.value.expectedOriginRevision as string,
+        )
+        // Re-read AFTER the commit so the response reflects the stored state.
+        const fresh = describeRequestOrigin(inventory, entries, request.value.entryId as string)
+        return {
+          ok: true,
+          value: originStateValue(request.value.entryId as string, fresh, origins.revision()),
+        }
+      }
     }
   } catch (error) {
     if (error instanceof ManagerFailure) {
@@ -196,6 +231,44 @@ async function managerHandler(
     /* v8 ignore next -- the optional-logger arms are embedding-dependent (the fake harness always supplies one); real-Host coverage lands with T09. */
     ctxLogger?.warn(`dsh-plugin-manager: ${endpoint} failed: ${error instanceof Error ? error.constructor.name : typeof error}: ${String((error as Error | null)?.message ?? error).slice(0, 160)}`)
     return { ok: false, error: { code: 'INTERNAL', message: 'the operation failed unexpectedly' } }
+  }
+}
+
+/**
+ * Resolve a request's entryId to its origin layers, failing closed: unknown
+ * entries answer ENTRY_NOT_FOUND; entries without a classifiable package
+ * (cordis: builtins, unresolvable modules) answer ORIGIN_UNAVAILABLE.
+ */
+function describeRequestOrigin(
+  inventory: InventoryAssembler,
+  entries: () => Iterable<LoaderEntry>,
+  entryId: string,
+): OriginDescription {
+  const row = rosterRows(entries()).find(candidate => candidate.entryId === entryId)
+  if (row === undefined) {
+    throw managerFailure('ENTRY_NOT_FOUND', 'the entry is not in the current Loader tree')
+  }
+  const description = inventory.describeOrigin(row.moduleName)
+  if (description === null) {
+    throw managerFailure('ORIGIN_UNAVAILABLE', 'the entry has no classifiable package to classify')
+  }
+  return description
+}
+
+/** The shared originState/originUpdate success payload. */
+function originStateValue(
+  entryId: string,
+  description: OriginDescription,
+  originRevision: string,
+): Record<string, unknown> {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    entryId,
+    packageName: description.packageName,
+    detected: description.detected,
+    effective: description.effective,
+    override: description.override,
+    originRevision,
   }
 }
 

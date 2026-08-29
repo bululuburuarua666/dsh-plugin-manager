@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { LifecycleEngine, type EngineHost } from '../../src/host/engine.ts'
 import { PluginLifecycleTokenStore } from '../../src/host/token-store.ts'
+import { isValidPatchListText } from '../../src/host/patch-editor.ts'
 import type { LoaderEntry } from '../../src/host/cordis.ts'
 
 interface MutableRow extends LoaderEntry {
-  options: { name: string; group?: unknown; disabled?: unknown }
+  options: { id?: unknown; name: string; group?: unknown; disabled?: unknown }
   disabled: boolean
 }
 
@@ -48,7 +49,7 @@ describe('LifecycleEngine remaining coverage arms', () => {
     writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p' }))
     const patchPath = join(profileDir, 'cordis.patch.yml')
 
-    const rows: MutableRow[] = [{ id: 'include:x', options: { name: 'cordis:noop' }, disabled: false }]
+    const rows: MutableRow[] = [{ id: 'include:x', options: { id: 'x', name: 'cordis:noop' }, disabled: false }]
     const engine = makeEngine(profileDir, rows)
     // No driver: the toggle times out after writing; the restore then hits a
     // read-only patch file and must report ROLLBACK_INCOMPLETE.
@@ -80,7 +81,7 @@ describe('LifecycleEngine remaining coverage arms', () => {
     mkdirSync(join(profileDir, 'node_modules'), { recursive: true })
     writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p' }))
 
-    const rows: MutableRow[] = [{ id: 'include:x', options: { name: 'cordis:noop' }, disabled: false }]
+    const rows: MutableRow[] = [{ id: 'include:x', options: { id: 'x', name: 'cordis:noop' }, disabled: false }]
     const engine = makeEngine(profileDir, rows)
 
     // Forge a token binding without a package name (preview never issues
@@ -107,7 +108,7 @@ describe('LifecycleEngine remaining coverage arms', () => {
     mkdirSync(join(profileDir, 'node_modules'), { recursive: true })
     writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p' }))
 
-    const rows: MutableRow[] = [{ id: 'include:x', options: { name: 'cordis:noop' }, disabled: false }]
+    const rows: MutableRow[] = [{ id: 'include:x', options: { id: 'x', name: 'cordis:noop' }, disabled: false }]
     const engine = makeEngine(profileDir, rows)
     const caps = engine.capabilities()
     engine.preview({ entryId: 'include:x', action: 'disable', expectedRevision: caps.revision })
@@ -140,7 +141,7 @@ describe('LifecycleEngine remaining coverage arms', () => {
     mkdirSync(join(profileDir, 'node_modules'), { recursive: true })
     writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p' }))
 
-    const rows: MutableRow[] = [{ id: 'include:x', options: { name: 'cordis:noop' }, disabled: false }]
+    const rows: MutableRow[] = [{ id: 'include:x', options: { id: 'x', name: 'cordis:noop' }, disabled: false }]
     const host: EngineHost = {
       entries: () => rows,
       persistence: () => 'writable',
@@ -254,7 +255,7 @@ describe('LifecycleEngine remaining coverage arms', () => {
     // The manifest still declares the dependency AND the entry still exists.
     writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dependencies: { 'dsh-still': '1.0.0' } }))
     const rows: MutableRow[] = [
-      { id: 'include:still', options: { name: 'cordis:noop' }, disabled: false },
+      { id: 'include:still', options: { id: 'still', name: 'cordis:noop' }, disabled: false },
       // A group row: filtered from evidence by the group check.
       { id: 'g1', options: { name: 'group', group: true }, disabled: false },
     ]
@@ -276,7 +277,7 @@ describe('LifecycleEngine remaining coverage arms', () => {
       schemaVersion: 1,
       records: [{ packageName: 'dsh-gone', entryIds: ['include:still-here'], operationId: 'op-1', createdAt: 1 }],
     }))
-    const rows: MutableRow[] = [{ id: 'include:still-here', options: { name: 'cordis:noop' }, disabled: false }]
+    const rows: MutableRow[] = [{ id: 'include:still-here', options: { id: 'still-here', name: 'cordis:noop' }, disabled: false }]
     const engine = makeEngine(profileDir, rows)
     await engine.startupCleanup()
     const pending = JSON.parse(readFileSync(join(profileDir, 'dsh-plugin-manager-pending-removals.json'), 'utf8')) as { records: unknown[] }
@@ -289,7 +290,7 @@ describe('LifecycleEngine remaining coverage arms', () => {
     mkdirSync(join(profileDir, 'node_modules'), { recursive: true })
     writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p' }))
 
-    const rows: MutableRow[] = [{ id: 'include:x', options: { name: 'cordis:noop' }, disabled: false }]
+    const rows: MutableRow[] = [{ id: 'include:x', options: { id: 'x', name: 'cordis:noop' }, disabled: false }]
     const engine = makeEngine(profileDir, rows)
     const caps = engine.capabilities()
     const preview = engine.preview({ entryId: 'include:x', action: 'disable', expectedRevision: caps.revision })
@@ -301,6 +302,44 @@ describe('LifecycleEngine remaining coverage arms', () => {
     } catch (error) {
       expect((error as { code: string }).code).toBe('PROFILE_CHANGED')
     }
+  })
+
+  it('fails a queued op PROFILE_CHANGED with zero writes when node_modules resolution drifts', async () => {
+    // The revision digest covers manifest/lockfile/patch/loader facts but NOT
+    // package resolution: deleting the link between execute() and the queued
+    // thunk drifts packageName with an identical revision. Single-threaded
+    // ordering makes the gap deterministic: the synchronous rmSync below runs
+    // after execute() returns and before the microtask-queued thunk starts.
+    const profileDir = mkdtempSync(join(tmpdir(), 'dsh-mgr-pkgdrift-'))
+    tempDirs.push(profileDir)
+    const pkgDir = join(profileDir, 'node_modules', 'dsh-drift-pkg')
+    mkdirSync(pkgDir, { recursive: true })
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'dsh-drift-pkg', main: 'index.js' }))
+    writeFileSync(join(pkgDir, 'index.js'), 'export function apply() {}\n')
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dependencies: { 'dsh-drift-pkg': '1.0.0' } }))
+    const patchPath = join(profileDir, 'cordis.patch.yml')
+
+    const rows: MutableRow[] = [{ id: 'include:drift', options: { id: 'drift', name: 'dsh-drift-pkg' }, disabled: true }]
+    const engine = makeEngine(profileDir, rows)
+    const caps = engine.capabilities()
+    // The package resolves at preview time: the token binds packageName.
+    const capability = caps.entries.find(entry => entry.entryId === 'include:drift')
+    expect(capability?.packageName).toBe('dsh-drift-pkg')
+    const preview = engine.preview({ entryId: 'include:drift', action: 'disable', expectedRevision: caps.revision })
+    const beforeManifest = readFileSync(join(profileDir, 'package.json'), 'utf8')
+    expect(existsSync(patchPath)).toBe(false)
+
+    const started = engine.execute({ token: preview.token })
+    expect(started.state).toBe('queued')
+    // The queued thunk has not run yet; drift node_modules resolution only.
+    rmSync(pkgDir, { recursive: true, force: true })
+
+    const done = await settle(engine, started.operationId)
+    expect(done.state).toBe('failed')
+    expect(done.errorCode).toBe('PROFILE_CHANGED')
+    // Zero writes: nothing touched patch/manifest/lockfile.
+    expect(existsSync(patchPath)).toBe(false)
+    expect(readFileSync(join(profileDir, 'package.json'), 'utf8')).toBe(beforeManifest)
   })
 
   it('fails the cleanup rewrite when the editor refuses the resulting document', async () => {
@@ -326,5 +365,61 @@ describe('LifecycleEngine remaining coverage arms', () => {
     await engine.startupCleanup()
     const pending = JSON.parse(readFileSync(join(profileDir, 'dsh-plugin-manager-pending-removals.json'), 'utf8')) as { records: unknown[] }
     expect(pending.records).toHaveLength(1)
+  })
+
+  it('blocks uninstall for a package that has entries outside the root patch space', async () => {
+    const profileDir = mkdtempSync(join(tmpdir(), 'dsh-mgr-pkggroup-'))
+    tempDirs.push(profileDir)
+    const pkgDir = join(profileDir, 'node_modules', 'dsh-mixed-pkg')
+    mkdirSync(pkgDir, { recursive: true })
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'dsh-mixed-pkg', main: 'index.js' }))
+    writeFileSync(join(pkgDir, 'index.js'), 'export function apply() {}\n')
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dependencies: { 'dsh-mixed-pkg': '1.0.0' } }))
+    // One root-space entry and one nested-subtree sibling from the same
+    // package: uninstall must refuse the WHOLE package at capabilities time.
+    const rows: MutableRow[] = [
+      { id: 'include:mixed', options: { id: 'mixed', name: 'dsh-mixed-pkg' }, disabled: true },
+      { id: 'include:preset:mixed', options: { id: 'mixed', name: 'dsh-mixed-pkg' }, disabled: true },
+    ]
+    const engine = makeEngine(profileDir, rows)
+    const caps = engine.capabilities()
+    const rootRow = caps.entries.find(entry => entry.entryId === 'include:mixed')
+    expect(rootRow?.canUninstall).toBe(false)
+    expect(rootRow?.uninstallBlockReason).toBe('not-direct-dependency')
+    // Toggling the root-space entry stays available; the nested row is
+    // invisible to the patch layer but still toggling-blocked.
+    expect(rootRow?.canToggle).toBe(true)
+    const nestedRow = caps.entries.find(entry => entry.entryId === 'include:preset:mixed')
+    expect(nestedRow?.canToggle).toBe(false)
+  })
+
+  it('cleanup removes the last managed row and re-emits an empty patch list that re-parses', async () => {
+    // Official template shape: comments plus the managed block only. Dropping
+    // the final row must restore the `[]` empty root, not leave a null
+    // document the boot path would reject.
+    const profileDir = mkdtempSync(join(tmpdir(), 'dsh-mgr-lastrow-'))
+    tempDirs.push(profileDir)
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dependencies: {} }))
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), [
+      '# comments-only remainder',
+      '# BEGIN DSH PLUGIN LIFECYCLE — managed, do not edit',
+      '- id: gone',
+      '  disabled: true',
+      '# END DSH PLUGIN LIFECYCLE',
+      '',
+    ].join('\n'))
+    writeFileSync(join(profileDir, 'dsh-plugin-manager-pending-removals.json'), JSON.stringify({
+      schemaVersion: 1,
+      // Pending records carry loader tree ids; the managed row is data-id keyed.
+      records: [{ packageName: 'dsh-gone', entryIds: ['include:gone'], operationId: 'op-1', createdAt: 1 }],
+    }))
+    const engine = makeEngine(profileDir, [])
+    await engine.startupCleanup()
+    const text = readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')
+    expect(text).not.toContain('- id: gone')
+    expect(text.trimEnd().endsWith('[]')).toBe(true)
+    expect(isValidPatchListText(text)).toBe(true)
+    const pending = JSON.parse(readFileSync(join(profileDir, 'dsh-plugin-manager-pending-removals.json'), 'utf8')) as { records: unknown[] }
+    expect(pending.records).toHaveLength(0)
   })
 })

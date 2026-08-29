@@ -80,7 +80,10 @@ export interface ManagerEntry {
   readonly entryId: string
   readonly moduleName: string
   readonly enabled: boolean
+  /** Effective origin after applying the user override, when any. */
   readonly origin: PluginInventoryOrigin
+  /** Automatic origin (manifest → heuristic) with the user override removed. */
+  readonly detectedOrigin: PluginInventoryOrigin
   readonly title: PluginInventoryCardText | null
   readonly description: PluginInventoryCardText | null
   readonly canToggle: boolean

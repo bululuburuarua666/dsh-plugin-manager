@@ -4,7 +4,7 @@
  * success), and the happy path for each endpoint.
  */
 import { describe, expect, it } from 'vitest'
-import { capabilities, execute, operation, preview, type ChannelCaller } from '../../src/client/protocol.ts'
+import { capabilities, execute, operation, originState, originUpdate, preview, type ChannelCaller } from '../../src/client/protocol.ts'
 import { MANAGER_CHANNEL } from '../../src/host/channel-protocol.ts'
 
 /** Recording fake transport. */
@@ -28,6 +28,7 @@ const goodCapabilities = {
     moduleName: 'cordis:timer',
     enabled: true,
     origin: { kind: 'official', customized: false, upstream: null, fork: null, branch: null, note: null, declaredBy: 'heuristic' },
+    detectedOrigin: { kind: 'official', customized: false, upstream: null, fork: null, branch: null, note: null, declaredBy: 'heuristic' },
     title: null,
     description: null,
     packageName: null,
@@ -36,6 +37,16 @@ const goodCapabilities = {
     toggleBlockReason: null,
     uninstallBlockReason: 'not-direct-dependency',
   }],
+}
+
+const goodOriginState = {
+  protocolVersion: 1,
+  entryId: 'include:timer',
+  packageName: 'cordis-timer',
+  detected: { kind: 'opensource', customized: false, upstream: null, fork: null, branch: null, note: null, declaredBy: 'heuristic' },
+  effective: { kind: 'personal', customized: false, upstream: null, fork: null, branch: null, note: { zh: 'mine', en: 'mine' }, declaredBy: 'user-override' },
+  override: { kind: 'personal', note: 'mine' },
+  originRevision: 'a'.repeat(64),
 }
 
 describe('client protocol — happy path', () => {
@@ -60,6 +71,25 @@ describe('client protocol — happy path', () => {
     const o = await operation(rpc, 'op-1')
     expect(o.ok).toBe(true)
     if (o.ok) expect(o.value.state).toBe('succeeded')
+  })
+
+  it('validates originState and originUpdate payloads on both layers', async () => {
+    const rpc = fakeRpc(async (endpoint, payload) => {
+      expect(endpoint === 'originState' || endpoint === 'originUpdate').toBe(true)
+      expect((payload as { protocolVersion: number }).protocolVersion).toBe(1)
+      return { ok: true, value: goodOriginState }
+    })
+    const state = await originState(rpc, 'include:timer')
+    expect(state.ok).toBe(true)
+    if (state.ok) {
+      expect(state.value.detected.declaredBy).toBe('heuristic')
+      expect(state.value.effective.declaredBy).toBe('user-override')
+      expect(state.value.override).toEqual({ kind: 'personal', note: 'mine' })
+    }
+    const calls = rpc.calls.length
+    const updated = await originUpdate(rpc, { entryId: 'include:timer', expectedOriginRevision: 'a'.repeat(64), override: null })
+    expect(updated.ok).toBe(true)
+    expect((rpc.calls[calls]!.payload as { override: unknown }).override).toBeNull()
   })
 })
 
@@ -139,5 +169,16 @@ describe('client protocol — error layering', () => {
     const rpc = fakeRpc(async () => ({ ok: true, value: { ...goodCapabilities, extra: 1 } }))
     const result = await capabilities(rpc)
     expect(result).toMatchObject({ ok: false, code: 'PROTOCOL_INVALID' })
+  })
+
+  it('answers PROTOCOL_INVALID for malformed originState bodies', async () => {
+    const badRevision = fakeRpc(async () => ({ ok: true, value: { ...goodOriginState, originRevision: '' } }))
+    expect(await originState(badRevision, 'include:timer')).toMatchObject({ ok: false, code: 'PROTOCOL_INVALID' })
+    const badOverride = fakeRpc(async () => ({ ok: true, value: { ...goodOriginState, override: { kind: 'builtin' } } }))
+    expect(await originState(badOverride, 'include:timer')).toMatchObject({ ok: false, code: 'PROTOCOL_INVALID' })
+    const badDetected = fakeRpc(async () => ({ ok: true, value: { ...goodOriginState, detected: { kind: 'official' } } }))
+    expect(await originState(badDetected, 'include:timer')).toMatchObject({ ok: false, code: 'PROTOCOL_INVALID' })
+    const oldVersion = fakeRpc(async () => ({ ok: true, value: { ...goodOriginState, protocolVersion: 2 } }))
+    expect(await originState(oldVersion, 'include:timer')).toMatchObject({ ok: false, code: 'INCOMPATIBLE' })
   })
 })

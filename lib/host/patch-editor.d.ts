@@ -25,10 +25,28 @@ export interface ManagedToggleRow {
     readonly disabled: boolean;
 }
 /**
- * Translate a loader tree entry id into the patch-layer data id it targets
- * (the last `:`-segment; ids without a colon are their own data id).
+ * The pinned id of the root Include entry (`mountRootInclude` in upstream
+ * `dsh-app-boot`). Loader tree ids of rows inside the profile's root patch
+ * space are exactly `include:<dataId>`; only that single-segment shape is
+ * addressable by an id-targeted patch in `cordis.patch.yml`.
  */
-export declare function dataIdOf(entryId: string): string;
+export declare const ROOT_INCLUDE_ID = "include";
+/**
+ * Strict tree-id → data-id mapping: non-null only when the row's declared
+ * data id composes back to the exact tree id (`include:<optionsId>`). Rows in
+ * nested subtrees (agent preset realms, `include:preset:foo`), loader-root
+ * rows without the prefix, and rosters that do not declare `options.id` have
+ * no addressable data id — an id-targeted patch can never reach them. No
+ * shape-based fallback: guessing from the tree id alone would re-introduce
+ * the cross-space collision the strict check exists to prevent.
+ */
+export declare function patchTargetIdOf(treeId: string, optionsId: unknown): string | null;
+/**
+ * One-way data-id → tree-id mapping for Loader-space probes. Unconditional:
+ * a legitimate data id may itself contain `:` segments, so never try to be
+ * clever about already-prefixed inputs — callers here always hold data ids.
+ */
+export declare function treeIdOfPatchTarget(dataId: string): string;
 /** Editor failure codes surfaced as lifecycle error codes. */
 export type PatchEditorFailureCode = 'INVALID_PATCH' | 'MANAGED_BLOCK_INVALID' | 'UNSUPPORTED_PATCH_SHAPE';
 /** Editor outcome: candidate bytes, or a structured refusal. */

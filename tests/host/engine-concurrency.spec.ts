@@ -9,7 +9,7 @@ import { readManagedToggleRows } from '../../src/host/patch-editor.ts'
 import type { LoaderEntry } from '../../src/host/cordis.ts'
 
 interface MutableRow extends LoaderEntry {
-  options: { name: string; group?: unknown; disabled?: unknown }
+  options: { id?: unknown; name: string; group?: unknown; disabled?: unknown }
   disabled: boolean
 }
 
@@ -69,7 +69,9 @@ function makeHarness(): { engine: LifecycleEngine; rows: MutableRow[]; profileDi
 }
 
 function addRow(h: { rows: MutableRow[] }, entryId: string, moduleName = 'cordis:noop'): MutableRow {
-  const row: MutableRow = { id: entryId, options: { name: moduleName }, disabled: false }
+  // Fake rosters declare the row's data id for the strict tree-id -> data-id
+  // mapping. Fixtures only use single-prefix ids (`include:<dataId>`).
+  const row: MutableRow = { id: entryId, options: { id: entryId.slice('include:'.length), name: moduleName }, disabled: false }
   h.rows.push(row)
   return row
 }

@@ -38,8 +38,8 @@ Host 进程内调用 pnpm。本模型回答三个问题：
 - 入口前已取消 → `CANCELLED`；确认后的 `execute` 不受调用方取消影响
   （不存在半途事务）。
 
-浏览器只提交 `entryId` + `action`；所有路径、包名、命令都在 Host 侧
-重新推导。
+浏览器只提交 `entryId` + `action`（来源覆盖端点额外提交分类字段与
+revision）；所有路径、包名、命令都在 Host 侧重新推导。
 
 ## 3. 卸载授权 —— 六道闸全过才放行
 
@@ -55,7 +55,25 @@ Host 进程内调用 pnpm。本模型回答三个问题：
 
 任何不确定都按拒绝处理。
 
-## 4. 事务语义
+## 4. 来源覆盖写入 —— 只碰展示分类
+
+`originState` / `originUpdate` 两个端点维护 `plugin-origins.json`：
+
+- 覆盖以**稳定包名**为键；包名由 Host 从 `entryId` 重新推导，浏览器
+  永远不提交裸包名。`cordis:` 内建与不可解析条目拒绝编辑
+  （`ORIGIN_UNAVAILABLE`）。
+- 写入管线：跨进程文件锁 → 锁内重读 → revision 冲突检查
+  （`ORIGIN_CONFLICT`）→ strict schema 校验 → 原子写 → 写后校验。
+- 已存在的损坏文件**保留原样并报错**（`ORIGIN_FILE_INVALID`），
+  绝不替换为空配置。
+- 「开源·定制」必须携带定制说明（`ORIGIN_NOTE_REQUIRED`），Host 侧
+  强制执行。
+- 覆盖**只影响展示与筛选**：`canToggle`、`canUninstall`、engine-owned、
+  protected-package 判定均不读取覆盖文件；手动「官方」不获得任何
+  官方信任或额外权限。
+- 只读部署（全接口绑定）拒绝 `originUpdate`（`READ_ONLY_REMOTE`）。
+
+## 5. 事务语义
 
 `preview → execute → operation`：
 
@@ -68,7 +86,7 @@ Host 进程内调用 pnpm。本模型回答三个问题：
   pnpm → 仅目标链接移除 → 后置校验 → hash-guard 回滚；删不掉的写入
   pending-removal 记录，下次启动幂等清账。
 
-## 5. 诊断卫生
+## 6. 诊断卫生
 
 跨线错误只带码与净化消息——无路径、无堆栈、无环境信息。服务端诊断
 只记错误类名与端点，不记载荷。

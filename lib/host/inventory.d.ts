@@ -4,7 +4,8 @@
  * pure engine over injected inputs (roster rows + profile directory) — the
  * Cordis wiring lives in the host entry and the RPC channel in T04.
  */
-import type { ManagerEntry, PluginOriginDiagnostic } from './protocol.ts';
+import { type PluginOriginOverrideEntry } from './origin.ts';
+import type { ManagerEntry, PluginInventoryOrigin, PluginOriginDiagnostic } from './protocol.ts';
 /** One roster row supplied by the host wiring (mirrors a non-group Loader entry). */
 export interface RosterEntry {
     readonly entryId: string;
@@ -18,6 +19,18 @@ export interface InventorySnapshot {
     readonly entries: readonly ManagerEntry[];
     readonly diagnostics: readonly PluginOriginDiagnostic[];
 }
+/** One module's full origin picture for the origin editor. */
+export interface OriginDescription {
+    /** The real package.json `name` the override is keyed by. */
+    readonly packageName: string;
+    /** Automatic origin (manifest → heuristic) with the user override removed. */
+    readonly detected: PluginInventoryOrigin;
+    /** Effective origin after applying the user override, when any. */
+    readonly effective: PluginInventoryOrigin;
+    /** The stored user override entry, or null when none applies. */
+    readonly override: PluginOriginOverrideEntry | null;
+    readonly diagnostics: readonly PluginOriginDiagnostic[];
+}
 /** Assemble the manager roster for one request. */
 export declare class InventoryAssembler {
     private readonly cards;
@@ -29,8 +42,22 @@ export declare class InventoryAssembler {
     private readOverrides;
     /** Whether a `file:`/`link:` target lives inside the local plugins dir. */
     private fileTargetInsideLocal;
-    /** Resolve one entry's origin through the override/manifest/heuristic chain. */
-    private originOf;
+    /** Evidence and manifest declaration for one module. */
+    private evidenceOf;
+    /** The override entry applying to one package, keyed by real package name. */
+    private overrideFor;
+    /**
+     * Resolve one entry's origin pair through the override/manifest/heuristic
+     * chain: the effective origin (override applied) and the detected origin
+     * (override removed). Both derive from one evidence assembly.
+     */
+    private originsOf;
+    /**
+     * Describe one module's origin layers for the origin editor. Returns null
+     * for `cordis:` builtins and unresolvable modules — they have no stable
+     * package name an override could key on.
+     */
+    describeOrigin(moduleName: string): OriginDescription | null;
     /** Assemble the current roster with origins and cards. */
     list(roster: readonly RosterEntry[]): InventorySnapshot;
 }

@@ -17,6 +17,7 @@ export default defineConfig({
         'src/host/token-store.ts',
         'src/host/operation-store.ts',
         'src/host/channel-protocol.ts',
+        'src/host/origin-store.ts',
         'src/index.ts',
         'src/client/protocol.ts',
         'src/client/PluginManagerTab.tsx',

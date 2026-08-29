@@ -9,7 +9,7 @@ import type { LoaderEntry } from '../../src/host/cordis.ts'
 import type { PackageRunner } from '../../src/host/uninstall.ts'
 
 interface MutableRow extends LoaderEntry {
-  options: { name: string; group?: unknown; disabled?: unknown }
+  options: { id?: unknown; name: string; group?: unknown; disabled?: unknown }
   disabled: boolean
 }
 
@@ -147,7 +147,7 @@ describe('LifecycleEngine uninstall flow', () => {
   it('uninstalls a direct dependency package-scoped and records restart state', async () => {
     const h = await uninstallHarness()
     // Disabled at creation so the loader never imports the fixture package.
-    h.rows.push({ id: 'include:fixture', options: { name: 'dsh-fixture-pkg' }, disabled: true })
+    h.rows.push({ id: 'include:fixture', options: { id: 'fixture', name: 'dsh-fixture-pkg' }, disabled: true })
 
     const capabilities = h.engine.capabilities()
     const capability = capabilities.entries.find(entry => entry.entryId === 'include:fixture')
@@ -178,7 +178,7 @@ describe('LifecycleEngine uninstall flow', () => {
     // The workspace twin: the policy file exists, so the transaction reads
     // and restores it (the null arm is covered by the default harness).
     writeFileSync(join(h.profileDir, 'pnpm-workspace.yaml'), 'packages: []\n')
-    h.rows.push({ id: 'include:fixture', options: { name: 'dsh-fixture-pkg' }, disabled: true })
+    h.rows.push({ id: 'include:fixture', options: { id: 'fixture', name: 'dsh-fixture-pkg' }, disabled: true })
     const caps = h.engine.capabilities()
     const cap = caps.entries.find(entry => entry.entryId === 'include:fixture')
     expect(cap?.canUninstall).toBe(true)
@@ -190,7 +190,7 @@ describe('LifecycleEngine uninstall flow', () => {
   it('fails with TIMEOUT when disposal never happens and rolls back', async () => {
     const h = await uninstallHarness({ withDriver: false })
     // Enabled so disposal is genuinely pending; no driver applies the disable.
-    h.rows.push({ id: 'include:fixture', options: { name: 'dsh-fixture-pkg' }, disabled: false })
+    h.rows.push({ id: 'include:fixture', options: { id: 'fixture', name: 'dsh-fixture-pkg' }, disabled: false })
     const beforePatch = readText(h.patchPath)
     const beforeManifest = readFileSync(join(h.profileDir, 'package.json'), 'utf8')
     const capabilities = h.engine.capabilities()
@@ -263,7 +263,7 @@ describe('LifecycleEngine uninstall flow', () => {
     writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
       dependencies: { 'dsh-gone': '1.0.0' },
     }))
-    const rows: MutableRow[] = [{ id: 'include:still', options: { name: 'cordis:noop' }, disabled: true }]
+    const rows: MutableRow[] = [{ id: 'include:still', options: { id: 'still', name: 'cordis:noop' }, disabled: true }]
     writeFileSync(patchPath, [
       '# BEGIN DSH PLUGIN LIFECYCLE — managed, do not edit',
       '- id: include:still',

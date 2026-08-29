@@ -32,8 +32,14 @@ export interface UninstallOptions {
     readonly workspacePolicyPath: string | null;
     readonly backupsRoot: string;
     readonly pendingPath: string;
-    /** Affected entry ids, in Loader order. */
+    /** Affected entry ids (Loader tree ids), in Loader order. */
     readonly affectedEntryIds: readonly string[];
+    /**
+     * The same entries' patch-space data ids — the bare row `id`s managed rows
+     * and splice results are keyed by. Must be positionally aligned with
+     * {@link UninstallOptions.affectedEntryIds}.
+     */
+    readonly affectedDataIds: readonly string[];
     /** Module names those entries resolve from (manual-insert splice keys). */
     readonly moduleNames: readonly string[];
     readonly io: UninstallIo;

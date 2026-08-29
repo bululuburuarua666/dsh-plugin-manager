@@ -30,7 +30,7 @@
 
 ## 插件来源分类
 
-每个条目还带有一个可选的 `origin` 投影，把插件包分类为 `official`（官方）、`personal`（个人）或 `opensource`（开源）。带有个人修改的开源包保持 `kind: "opensource"`，并附加 `customized: true` 及 `fork` / `branch` / `note` 明细；`personal` 插件是自主构建的作品（即使借鉴了其他项目的思路），始终规范化为 `customized: false`。解析遵循固定的优先级链：
+每个条目还带有一个可选的 `origin` 投影，把插件包分类为 `official`（官方）、`personal`（用户）或 `opensource`（开源）。带有本地定制修改的开源包保持 `kind: "opensource"`，并附加 `customized: true` 及 `fork` / `branch` / `note` 明细；`personal` 插件是用户自建发布的作品（不限于是当前用户——任何社区作者皆可），始终规范化为 `customized: false`。解析遵循固定的优先级链：
 
 1. **用户覆盖** —— profile 根目录的 `plugin-origins.json`：`{ "schemaVersion": 1, "packages": { "<包名>": { "kind": "personal", ... } } }`。键是真实的 package.json 包名，不是 Loader 条目 id。可选字段上的显式 `null` 会清除继承值。
 2. **插件声明** —— 包自身 package.json 的 `dsh.origin` 字段，例如 `{ "dsh": { "origin": { "kind": "opensource", "customized": true, "upstream": "https://github.com/owner/project", "fork": "https://github.com/me/project", "branch": "my-tweaks", "note": { "zh": "…", "en": "…" } } } }`。第三方包无法借此自称 `official`：除非包实际位于运行中引擎的安装树内，或声明了官方仓库，否则该声明会被忽略（并产生 `official-claim-rejected` 诊断）。

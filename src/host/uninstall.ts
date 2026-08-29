@@ -12,7 +12,6 @@ import { load as parseYaml } from 'js-yaml'
 import { lifecycleFailure } from './failure.ts'
 import {
   applyManagedToggleRows,
-  dataIdOf,
   readManagedToggleRows,
   removeManualInsertRows,
   type ManagedToggleRow,
@@ -47,8 +46,14 @@ export interface UninstallOptions {
   readonly workspacePolicyPath: string | null
   readonly backupsRoot: string
   readonly pendingPath: string
-  /** Affected entry ids, in Loader order. */
+  /** Affected entry ids (Loader tree ids), in Loader order. */
   readonly affectedEntryIds: readonly string[]
+  /**
+   * The same entries' patch-space data ids — the bare row `id`s managed rows
+   * and splice results are keyed by. Must be positionally aligned with
+   * {@link UninstallOptions.affectedEntryIds}.
+   */
+  readonly affectedDataIds: readonly string[]
   /** Module names those entries resolve from (manual-insert splice keys). */
   readonly moduleNames: readonly string[]
   readonly io: UninstallIo
@@ -131,8 +136,10 @@ export async function runUninstallTransaction(options: UninstallOptions): Promis
   let mutated = false
   try {
     // 2. Patch mutation (under the patch file lock): disable affected entries
-    //    and splice manual inserts.
-    let remainingIds = options.affectedEntryIds
+    //    and splice manual inserts. Patch-space bookkeeping (spliced ids,
+    //    managed rows, remaining set) uses the DATA id list; Loader-space
+    //    callbacks (dispose wait, probes) use the TREE id list.
+    let remainingIds = options.affectedDataIds
     await options.withPatchLock(async () => {
       const patchBefore = io.readText(options.patchPath)
       const rows: ManagedToggleRow[] = []
@@ -148,14 +155,13 @@ export async function runUninstallTransaction(options: UninstallOptions): Promis
           throw lifecycleFailure(removed.code, removed.message)
         }
       }
-      remainingIds = options.affectedEntryIds.filter(id => !splicedEntryIds.includes(id))
+      remainingIds = options.affectedDataIds.filter(id => !splicedEntryIds.includes(id))
       const current = readManagedToggleRows(candidates)
       if (current !== null && !current.ok) {
         throw lifecycleFailure('MANAGED_BLOCK_INVALID', current.message)
       }
-      const affectedDataIds = options.affectedEntryIds.map(dataIdOf)
-      rows.push(...(current === null ? [] : current.rows).filter(row => !affectedDataIds.includes(row.entryId)))
-      for (const dataId of affectedDataIds) rows.push({ entryId: dataId, disabled: true })
+      rows.push(...(current === null ? [] : current.rows).filter(row => !options.affectedDataIds.includes(row.entryId)))
+      for (const dataId of options.affectedDataIds) rows.push({ entryId: dataId, disabled: true })
       const edited = applyManagedToggleRows(candidates, rows)
       /* v8 ignore next -- every input reaching this point already passed the same validation the editor applies. */
       if (!edited.ok) throw lifecycleFailure(edited.code, edited.message)
@@ -237,8 +243,8 @@ async function dropSplicedManagedRows(
     /* v8 ignore start -- exercised by the manual-insert splice test; the instrumented nested callback is misattributed. */
     const cleaned = readManagedToggleRows(options.io.readText(options.patchPath))
     if (cleaned === null || !cleaned.ok) return
-    const splicedDataIds = splicedEntryIds.map(dataIdOf)
-    const kept = cleaned.rows.filter(row => !splicedDataIds.includes(row.entryId))
+    // Spliced ids come from patch insert rows and are already data ids.
+    const kept = cleaned.rows.filter(row => !splicedEntryIds.includes(row.entryId))
     const rewritten = applyManagedToggleRows(options.io.readText(options.patchPath), kept)
     if (!rewritten.ok) return
     await options.io.writeAtomic(options.patchPath, rewritten.content)

@@ -87,6 +87,7 @@ function baseOptions(overrides: Partial<UninstallOptions> & {
     backupsRoot: 'C:\\tmp\\backups',
     pendingPath: join(profileDir, 'plugin-lifecycle-pending-removals.json'),
     affectedEntryIds: ['vision-router'],
+    affectedDataIds: ['vision-router'],
     moduleNames: ['dsh-vision-router'],
     waitForDispose: async () => {},
     probeEntryIds: ids => ids,

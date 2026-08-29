@@ -131,4 +131,70 @@ describe('InventoryAssembler', () => {
     // Uninstall gating is the T03 engine's job; T02 fails closed everywhere.
     expect(snapshot.entries[0]!.canUninstall).toBe(false)
   })
+
+  it('splits detectedOrigin from the overridden effective origin', () => {
+    const { profileDir } = profileFixture()
+    withPackage(profileDir, 'dsh-vision-router', { repository: 'https://github.com/example/vision-router' })
+    writeFileSync(join(profileDir, 'plugin-origins.json'), JSON.stringify({
+      schemaVersion: 1,
+      packages: { 'dsh-vision-router': { kind: 'personal' } },
+    }))
+    const baseUrl = pathToFileURL(join(profileDir, 'cordis.yml')).href
+    const assembler = new InventoryAssembler(baseUrl)
+    const snapshot = assembler.list([{ entryId: 'include:vision-router', moduleName: 'dsh-vision-router', disabled: false }])
+    const entry = snapshot.entries[0]!
+    // Effective: the user override wins. Detected: the automatic chain only.
+    expect(entry.origin.kind).toBe('personal')
+    expect(entry.origin.declaredBy).toBe('user-override')
+    expect(entry.detectedOrigin.kind).toBe('opensource')
+    expect(entry.detectedOrigin.declaredBy).toBe('heuristic')
+  })
+
+  it('reports identical detected and effective origins without an override', () => {
+    const { profileDir } = profileFixture()
+    withPackage(profileDir, 'dsh-vision-router', { repository: 'https://github.com/example/vision-router' })
+    const baseUrl = pathToFileURL(join(profileDir, 'cordis.yml')).href
+    const assembler = new InventoryAssembler(baseUrl)
+    const snapshot = assembler.list([{ entryId: 'include:vision-router', moduleName: 'dsh-vision-router', disabled: false }])
+    expect(snapshot.entries[0]!.detectedOrigin).toBe(snapshot.entries[0]!.origin)
+  })
+})
+
+describe('InventoryAssembler.describeOrigin', () => {
+  it('returns null for cordis: builtins (no package name to key an override on)', () => {
+    const { baseUrl } = profileFixture()
+    const assembler = new InventoryAssembler(baseUrl)
+    expect(assembler.describeOrigin('cordis:timer')).toBeNull()
+  })
+
+  it('describes both origin layers and the stored override entry', () => {
+    const { profileDir } = profileFixture()
+    withPackage(profileDir, 'dsh-vision-router', { repository: 'https://github.com/example/vision-router' })
+    writeFileSync(join(profileDir, 'plugin-origins.json'), JSON.stringify({
+      schemaVersion: 1,
+      packages: { 'dsh-vision-router': { kind: 'opensource', customized: true, note: '定制说明' } },
+    }))
+    const baseUrl = pathToFileURL(join(profileDir, 'cordis.yml')).href
+    const assembler = new InventoryAssembler(baseUrl)
+    const description = assembler.describeOrigin('dsh-vision-router')
+    expect(description).not.toBeNull()
+    expect(description!.packageName).toBe('dsh-vision-router')
+    expect(description!.detected.kind).toBe('opensource')
+    expect(description!.detected.customized).toBe(false)
+    expect(description!.effective.kind).toBe('opensource')
+    expect(description!.effective.customized).toBe(true)
+    expect(description!.effective.declaredBy).toBe('user-override')
+    expect(description!.override).toEqual({ kind: 'opensource', customized: true, note: '定制说明' })
+  })
+
+  it('describes a package without an override (detected === effective)', () => {
+    const { profileDir } = profileFixture()
+    withPackage(profileDir, 'dsh-vision-router', { repository: 'https://github.com/example/vision-router' })
+    const baseUrl = pathToFileURL(join(profileDir, 'cordis.yml')).href
+    const assembler = new InventoryAssembler(baseUrl)
+    const description = assembler.describeOrigin('dsh-vision-router')
+    expect(description).not.toBeNull()
+    expect(description!.override).toBeNull()
+    expect(description!.detected).toBe(description!.effective)
+  })
 })

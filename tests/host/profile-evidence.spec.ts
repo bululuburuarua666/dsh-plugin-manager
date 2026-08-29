@@ -36,6 +36,7 @@ function facts(overrides: Partial<LifecycleEntryFacts>): LifecycleEntryFacts {
     moduleName: 'some-plugin',
     disabled: false,
     ownDisabled: false,
+    patchTargetId: 'entry-1',
     ...overrides,
   }
 }

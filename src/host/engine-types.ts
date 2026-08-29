@@ -39,6 +39,10 @@ export type PluginLifecycleErrorCode =
   | 'POSTCONDITION_FAILED'
   | 'TIMEOUT'
   | 'ROLLBACK_INCOMPLETE'
+  | 'ORIGIN_CONFLICT'
+  | 'ORIGIN_FILE_INVALID'
+  | 'ORIGIN_UNAVAILABLE'
+  | 'ORIGIN_NOTE_REQUIRED'
   | 'INTERNAL'
 
 /** Per-entry capability row inside {@link PluginLifecycleCapabilities}. */

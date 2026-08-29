@@ -1,0 +1,82 @@
+{
+  "pluginVersion": "0.1.0-alpha.1",
+  "status": "green",
+  "checks": [
+    {
+      "name": "L0 real tgz install into the scratch web profile",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L-boot stock dsh web serves HTTP on the scratch port",
+      "ok": true,
+      "detail": "port 3664"
+    },
+    {
+      "name": "L1 capabilities ok and the fixture row is toggleable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L1b fixture fiber applied at boot (enabled baseline)",
+      "ok": true,
+      "detail": "apply=1 dispose=0"
+    },
+    {
+      "name": "L2a preview accepts the disable intent",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L2b execute acknowledges queued state",
+      "ok": true,
+      "detail": "state=queued"
+    },
+    {
+      "name": "L2c operation settles succeeded",
+      "ok": true,
+      "detail": "states=running/succeeded"
+    },
+    {
+      "name": "L3 managed row carries the data id (not the tree id)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L4 fixture fiber disposed after disable",
+      "ok": true,
+      "detail": "dispose=1"
+    },
+    {
+      "name": "L5a restart serves HTTP again",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L5b fixture stayed disabled across the restart",
+      "ok": true,
+      "detail": "apply=1 dispose=1"
+    },
+    {
+      "name": "L6a preview accepts the enable intent",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L6b enable operation settles succeeded",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "L6c fixture fiber re-applied after enable",
+      "ok": true,
+      "detail": "apply=2"
+    },
+    {
+      "name": "L6d managed row now reads the explicit null override",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "timestamp": "2026-08-29T05:43:19.470Z"
+}

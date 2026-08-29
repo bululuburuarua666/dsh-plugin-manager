@@ -26,12 +26,12 @@
     {
       "name": "S-boot dsh web serves HTTP",
       "ok": true,
-      "detail": "port 3555"
+      "detail": "port 3507"
     },
     {
       "name": "S5 channel capabilities over real HTTP",
       "ok": true,
-      "detail": "entries=143"
+      "detail": "entries=142"
     },
     {
       "name": "S6 spoofed-host rejected with 403 before the handler",
@@ -44,5 +44,5 @@
       "detail": ""
     }
   ],
-  "timestamp": "2026-08-27T12:07:33.510Z"
+  "timestamp": "2026-08-29T05:49:45.652Z"
 }

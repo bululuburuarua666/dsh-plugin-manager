@@ -4,8 +4,10 @@ import {
   isValidPatchListText,
   LIFECYCLE_BEGIN_MARKER,
   LIFECYCLE_END_MARKER,
+  patchTargetIdOf,
   readManagedToggleRows,
   removeManualInsertRows,
+  treeIdOfPatchTarget,
 } from '../../src/host/patch-editor.ts'
 
 const USER_ROWS = [
@@ -33,7 +35,62 @@ describe('isValidPatchListText', () => {
   })
 })
 
+describe('patchTargetIdOf', () => {
+  it('maps only exact single-prefix root-space declarations', () => {
+    expect(patchTargetIdOf('include:timer', 'timer')).toBe('timer')
+    // Nested subtree ids never match their last segment.
+    expect(patchTargetIdOf('include:preset:foo', 'foo')).toBeNull()
+    // No include prefix.
+    expect(patchTargetIdOf('timer', 'timer')).toBeNull()
+    // Declared id must compose back to the exact tree id.
+    expect(patchTargetIdOf('include:foo', 'bar')).toBeNull()
+    // Non-string and empty declarations are not addressable.
+    expect(patchTargetIdOf('include:foo', undefined)).toBeNull()
+    expect(patchTargetIdOf('include:foo', '')).toBeNull()
+    expect(patchTargetIdOf('include:42', 42)).toBeNull()
+  })
+})
+
+describe('treeIdOfPatchTarget', () => {
+  it('prefixes unconditionally, even when the data id itself contains colons', () => {
+    expect(treeIdOfPatchTarget('timer')).toBe('include:timer')
+    expect(treeIdOfPatchTarget('include:foo')).toBe('include:include:foo')
+  })
+})
+
 describe('applyManagedToggleRows', () => {
+  it('round-trips the official comments-plus-empty-list template', () => {
+    const template = [
+      '# Your patch layer for this dsh profile, applied after every bundle layer:',
+      '# a top-level YAML array of loader patch entries.',
+      '[]',
+      '',
+    ].join('\n')
+    // No-op on a pristine template: nothing to write, nothing to restore.
+    const untouched = applyManagedToggleRows(template, [])
+    expect(untouched.ok).toBe(true)
+    expect(untouched.ok ? untouched.content : '').toBe(template)
+    const first = applyManagedToggleRows(template, [{ entryId: 'target', disabled: true }])
+    expect(first.ok).toBe(true)
+    if (first.ok) {
+      // The `[]` flow root is REPLACED by the block; the file stays a single
+      // valid document.
+      expect(first.content).toContain('- id: target')
+      expect(first.content).not.toMatch(/^\[\]$/m)
+      const rows = readManagedToggleRows(first.content)
+      expect(rows !== null && rows.ok ? rows.rows : []).toEqual([{ entryId: 'target', disabled: true }])
+      // Collapsing the block re-emits `[]` so the layer never becomes the
+      // null document the boot path rejects.
+      const cleared = applyManagedToggleRows(first.content, [])
+      expect(cleared.ok).toBe(true)
+      if (cleared.ok) {
+        expect(cleared.content).not.toContain('- id: target')
+        expect(cleared.content.trimEnd().endsWith('[]')).toBe(true)
+        expect(isValidPatchListText(cleared.content)).toBe(true)
+      }
+    }
+  })
+
   it('appends a sorted marker block to a file without one', () => {
     const result = applyManagedToggleRows(USER_ROWS, [
       { entryId: 'zeta', disabled: true },

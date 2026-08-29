@@ -25,6 +25,17 @@ export const PROTECTED_PACKAGES: readonly string[] = [
   '@deepseek-ai/dsh-base',
 ]
 
+/**
+ * Root-space row ids whose toggling would break the machinery this surface
+ * depends on: the HMR fallback the upstream launcher mounts after boot, its
+ * timer dependency, and the manager's own row.
+ */
+export const PROTECTED_TOGGLE_ENTRY_IDS: readonly string[] = [
+  'timer',
+  'hmr',
+  'dsh-plugin-manager',
+]
+
 /** Loader-entry facts the evidence layer consumes. */
 export interface LifecycleEntryFacts {
   readonly entryId: string
@@ -33,6 +44,14 @@ export interface LifecycleEntryFacts {
   readonly disabled: boolean
   /** The entry's own (not ancestor-inherited) disabled flag. */
   readonly ownDisabled: boolean
+  /**
+   * The PATCH-space data id this entry is addressed by inside the profile's
+   * user patch layer — the bare composed row `id`. Null when the entry lives
+   * outside the root include's patch space (a nested subtree, e.g. an agent
+   * preset realm, or a loader-root-level row), meaning no id-targeted patch
+   * can reach it.
+   */
+  readonly patchTargetId: string | null
 }
 
 /** A profile manifest's dependency and bundle-membership view. */
@@ -143,6 +162,8 @@ export interface LifecycleEntryEvidence {
   readonly moduleName: string
   readonly disabled: boolean
   readonly ownDisabled: boolean
+  /** PATCH-space data id, or null outside the root include's patch space. */
+  readonly patchTargetId: string | null
   readonly packageName: string | null
   readonly isDirectDependency: boolean
   readonly isBundleMember: boolean
@@ -321,6 +342,7 @@ export function buildEntryEvidence(
     moduleName: facts.moduleName,
     disabled: facts.disabled,
     ownDisabled: facts.ownDisabled,
+    patchTargetId: facts.patchTargetId,
     packageName: packageDir === null ? null : packageName,
     isDirectDependency,
     isBundleMember,
@@ -333,17 +355,30 @@ export function buildEntryEvidence(
 }
 
 /**
- * Compute one entry's capability row. Toggle is available to every known
- * entry on a writable surface; uninstall additionally requires an exact
- * direct-dependency mapping outside every protected class.
+ * Compute one entry's capability row. Toggle requires the entry to be
+ * addressable by an id-targeted patch in the profile's user patch layer (a
+ * root-space data id) and not be lifecycle-critical infrastructure; uninstall
+ * additionally requires an exact direct-dependency mapping outside every
+ * protected class. A row outside the root patch space cannot be reached by
+ * any patch, so neither action is offered for it.
  */
 export function capabilityOf(
   evidence: LifecycleEntryEvidence,
   persistence: 'writable' | 'read-only',
 ): PluginLifecycleEntryCapability {
-  const toggleBlockReason = persistence === 'writable' ? null : 'read-only-remote'
+  let toggleBlockReason: PluginLifecycleBlockReason | null = null
+  if (persistence !== 'writable') toggleBlockReason = 'read-only-remote'
+  // A row outside the root patch space cannot be addressed by an
+  // id-targeted patch at all; report it like a non-dependency of the profile.
+  else if (evidence.patchTargetId === null) toggleBlockReason = 'not-direct-dependency'
+  // Explicit infrastructure ids AND protected infrastructure packages
+  // (webserver, app-boot, base, the manager itself) are not hot-toggleable.
+  else if (PROTECTED_TOGGLE_ENTRY_IDS.includes(evidence.patchTargetId) || evidence.isProtected) {
+    toggleBlockReason = 'protected-plugin'
+  }
   let uninstallBlockReason: PluginLifecycleBlockReason | null = null
   if (persistence !== 'writable') uninstallBlockReason = 'read-only-remote'
+  else if (evidence.patchTargetId === null) uninstallBlockReason = 'not-direct-dependency'
   else if (evidence.packageName === null) uninstallBlockReason = 'not-direct-dependency'
   else if (evidence.isProtected) uninstallBlockReason = 'protected-plugin'
   else if (evidence.insideEngineTree) uninstallBlockReason = 'engine-owned'
@@ -389,7 +424,7 @@ export function computeRevision(
   hash.update(digests.lockfile)
   hash.update(digests.patch)
   for (const entry of [...entries].sort((left, right) => left.entryId.localeCompare(right.entryId))) {
-    hash.update(`\0${entry.entryId}=${entry.moduleName}:${entry.disabled ? '1' : '0'}`)
+    hash.update(`\0${entry.entryId}=${entry.moduleName}:${entry.disabled ? '1' : '0'}:${entry.patchTargetId ?? '-'}`)
   }
   return hash.digest('hex')
 }

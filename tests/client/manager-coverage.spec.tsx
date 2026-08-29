@@ -14,6 +14,7 @@ const baseEntry = (overrides: Partial<ClientCapabilities['entries'][number]> = {
   moduleName: 'dsh-plugin-x',
   enabled: false,
   origin: { kind: 'opensource', customized: false, upstream: null, fork: null, branch: null, note: null, declaredBy: 'heuristic' },
+  detectedOrigin: { kind: 'opensource', customized: false, upstream: null, fork: null, branch: null, note: null, declaredBy: 'heuristic' },
   title: { zh: '插件X', en: 'Plugin X' },
   description: null,
   packageName: 'dsh-plugin-x',

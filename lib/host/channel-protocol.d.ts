@@ -9,8 +9,8 @@ import { z } from 'zod';
 export declare const REQUEST_BODY_MAX_BYTES: number;
 /** The channel every RPC flows through, pinned to loopback authority. */
 export declare const MANAGER_CHANNEL = "/dsh-plugin-manager";
-/** The four endpoints this channel serves; nothing else is routed. */
-export declare const MANAGER_ENDPOINTS: readonly ["capabilities", "preview", "execute", "operation"];
+/** The six endpoints this channel serves; nothing else is routed. */
+export declare const MANAGER_ENDPOINTS: readonly ["capabilities", "preview", "execute", "operation", "originState", "originUpdate"];
 export type ManagerEndpoint = typeof MANAGER_ENDPOINTS[number];
 /** capabilities request: protocol version only. */
 export declare const capabilitiesRequestSchema: z.ZodObject<{
@@ -36,6 +36,56 @@ export declare const executeRequestSchema: z.ZodObject<{
 export declare const operationRequestSchema: z.ZodObject<{
     protocolVersion: z.ZodLiteral<1>;
     operationId: z.ZodString;
+}, z.core.$strict>;
+/** originState request: the entry whose origin layers to describe. */
+export declare const originStateRequestSchema: z.ZodObject<{
+    protocolVersion: z.ZodLiteral<1>;
+    entryId: z.ZodString;
+}, z.core.$strict>;
+/**
+ * Wire shape of one origin override entry: the `plugin-origins.json` entry
+ * schema, strict (unknown fields reject). An explicit `null` on an optional
+ * field clears the inherited value during the merge.
+ */
+export declare const originOverrideWireSchema: z.ZodObject<{
+    kind: z.ZodEnum<{
+        official: "official";
+        personal: "personal";
+        opensource: "opensource";
+    }>;
+    customized: z.ZodOptional<z.ZodBoolean>;
+    upstream: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    fork: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    branch: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    note: z.ZodOptional<z.ZodNullable<z.ZodUnion<readonly [z.ZodString, z.ZodObject<{
+        zh: z.ZodString;
+        en: z.ZodString;
+    }, z.core.$strict>]>>>;
+}, z.core.$strict>;
+/**
+ * originUpdate request: set (`override`) or clear (`null` → restore
+ * automatic detection) the classification of the entry's package. The
+ * revision binds the write to the file state the user saw.
+ */
+export declare const originUpdateRequestSchema: z.ZodObject<{
+    protocolVersion: z.ZodLiteral<1>;
+    entryId: z.ZodString;
+    expectedOriginRevision: z.ZodString;
+    override: z.ZodNullable<z.ZodObject<{
+        kind: z.ZodEnum<{
+            official: "official";
+            personal: "personal";
+            opensource: "opensource";
+        }>;
+        customized: z.ZodOptional<z.ZodBoolean>;
+        upstream: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        fork: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        branch: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        note: z.ZodOptional<z.ZodNullable<z.ZodUnion<readonly [z.ZodString, z.ZodObject<{
+            zh: z.ZodString;
+            en: z.ZodString;
+        }, z.core.$strict>]>>>;
+    }, z.core.$strict>>;
 }, z.core.$strict>;
 /** Response envelope: ok value or structured error; unknown fields dropped client-side by schema. */
 export declare const managerErrorSchema: z.ZodObject<{

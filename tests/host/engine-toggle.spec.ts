@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { LifecycleEngine, type EngineHost } from '../../src/host/engine.ts'
-import { dataIdOf, readManagedToggleRows } from '../../src/host/patch-editor.ts'
+import { readManagedToggleRows } from '../../src/host/patch-editor.ts'
 import { PROTECTED_PACKAGES } from '../../src/host/profile-evidence.ts'
 import type { LoaderEntry } from '../../src/host/cordis.ts'
 import type { PluginLifecycleOperationView } from '../../src/host/engine-types.ts'
 
 /** Mutable fake Loader row (the engine reads; the driver writes). */
 interface MutableRow extends LoaderEntry {
-  options: { name: string; group?: unknown; disabled?: unknown }
+  options: { id?: unknown; name: string; group?: unknown; disabled?: unknown }
   disabled: boolean
   /** Test hook: keep the effective state blocked despite managed rows. */
   blockedByAncestor?: boolean
@@ -92,7 +92,11 @@ async function toggleHarness(options: { withDriver?: boolean; persistence?: 'wri
 }
 
 function addRow(h: ToggleHarness, entryId: string, moduleName: string): MutableRow {
-  const row: MutableRow = { id: entryId, options: { name: moduleName }, disabled: false }
+  // Fake rosters declare the row's data id so the strict tree-id -> data-id
+  // mapping (`patchTargetIdOf`) can certify root-space rows. Fixtures only
+  // use single-prefix ids (`include:<dataId>`).
+  const dataId = entryId.slice('include:'.length)
+  const row: MutableRow = { id: entryId, options: { id: dataId, name: moduleName }, disabled: false }
   h.rows.push(row)
   return row
 }
@@ -137,7 +141,7 @@ describe('LifecycleEngine toggle flow', () => {
     expect(h.rows.find(entry => entry.id === entryId)?.disabled).toBe(true)
 
     const rows = readManagedToggleRows(readText(h.patchPath))
-    expect(rows !== null && rows.ok ? rows.rows : []).toEqual([{ entryId: dataIdOf(entryId), disabled: true }])
+    expect(rows !== null && rows.ok ? rows.rows : []).toEqual([{ entryId: 'noop', disabled: true }])
 
     const next = h.engine.capabilities()
     const enable = h.engine.preview({ entryId, action: 'enable', expectedRevision: next.revision })
@@ -146,7 +150,7 @@ describe('LifecycleEngine toggle flow', () => {
     expect(h.rows.find(entry => entry.id === entryId)?.disabled).toBe(false)
     // The enable keeps its explicit null row (an ancestor group may override).
     const after = readManagedToggleRows(readText(h.patchPath))
-    expect(after !== null && after.ok ? after.rows : []).toEqual([{ entryId: dataIdOf(entryId), disabled: false }])
+    expect(after !== null && after.ok ? after.rows : []).toEqual([{ entryId: 'noop', disabled: false }])
   })
 
   it('rejects stale revisions, unknown entries, and unknown tokens', async () => {
@@ -213,7 +217,7 @@ describe('LifecycleEngine toggle flow', () => {
     expect(done.state).toBe('failed')
     expect(done.errorCode).toBe('BLOCKED_BY_ANCESTOR')
     const rows = readManagedToggleRows(readText(h.patchPath))
-    expect(rows !== null && rows.ok ? rows.rows : []).toEqual([{ entryId: dataIdOf('include:noop'), disabled: false }])
+    expect(rows !== null && rows.ok ? rows.rows : []).toEqual([{ entryId: 'noop', disabled: false }])
   }, 15_000)
 
   it('fails cleanly when the managed block is malformed', async () => {
