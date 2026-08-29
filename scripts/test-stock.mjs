@@ -27,6 +27,8 @@ function dirname(p) { return p.slice(0, Math.max(p.lastIndexOf('/'), p.lastIndex
 const args = { deployment: 'source', install: 'tgz' }
 for (let i = 2; i < process.argv.length; i += 1) {
   const flag = process.argv[i]
+  // pnpm run forwards a literal `--` separator into argv; skip it.
+  if (flag === '--') continue
   const value = flag.split('=')[1] ?? process.argv[i + 1]
   if (flag.startsWith('--deployment')) args.deployment = value
   else if (flag.startsWith('--install')) args.install = value

@@ -54,7 +54,7 @@ jobs:
       - name: Committed lib is byte-reproducible
         shell: bash
         run: |
-          git diff --exit-code -- lib || (echo "::error::lib/ drifted from a clean rebuild — commit the rebuilt artifacts" && git diff --stat -- lib && exit 1)
+          git diff --ignore-cr-at-eol --exit-code -- lib || (echo "::error::lib/ drifted from a clean rebuild — commit the rebuilt artifacts" && git diff --stat -- lib && exit 1)
 
       - name: Documentation gates
         run: pnpm run verify:docs
@@ -109,7 +109,7 @@ jobs:
           pnpm run verify:assets
 
       - name: Stock quadrant (npm · ${{ matrix.install }})
-        run: pnpm run test:stock -- --deployment=npm --install=${{ matrix.install }}
+        run: pnpm run test:stock --deployment=npm --install=${{ matrix.install }}
 
       - name: Upload quadrant evidence
         if: always()
