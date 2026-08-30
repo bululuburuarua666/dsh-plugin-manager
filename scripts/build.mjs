@@ -27,6 +27,10 @@ const result = await build({
   platform: 'browser',
   outfile: 'lib/client.js',
   sourcemap: true,
+  // Sources' line endings vary with the checkout environment (CRLF vs LF);
+  // embedding them makes the committed map impossible to reproduce in CI.
+  // Positions live in `mappings`, which are EOL-insensitive either way.
+  sourcesContent: false,
   logLevel: 'info',
   external: ['react', 'react/jsx-runtime', '@deepseek-ai/*'],
   banner: {
