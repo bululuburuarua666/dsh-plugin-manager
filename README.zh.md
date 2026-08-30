@@ -231,7 +231,7 @@ dsh plugin --profile web remove @bululuburuarua666/dsh-plugin-manager
 
 这是独立的社区项目，与 DeepSeek 无隶属关系，亦未获其背书。项目会跟随 DSH 的开发预览 API 演进；兼容性以版本和文档为准，不作默认假设。
 
-欢迎提交贡献、问题报告和兼容性反馈。发起 Pull Request 前请先阅读仓库贡献指南。如果这个项目对你有用，欢迎在 [GitHub](https://github.com/bululuburuarua666/dsh-plugin-manager) 上点一个 Star 支持一下。
+欢迎提交贡献、问题报告和兼容性反馈。发起 Pull Request 前请先阅读仓库贡献指南。如果这个项目对你有用，欢迎你点一个 Star 。
 
 ## 🙏 致谢
 
